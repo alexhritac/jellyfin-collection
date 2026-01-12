@@ -3,7 +3,11 @@
 [![Docker Build](https://github.com/4lx69/jellyfin-collection/actions/workflows/docker-build.yml/badge.svg)](https://github.com/4lx69/jellyfin-collection/actions/workflows/docker-build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Docker Pulls](https://img.shields.io/docker/pulls/4lx69/jellyfin-collection)](https://github.com/4lx69/jellyfin-collection/pkgs/container/jellyfin-collection)
+[![GHCR](https://img.shields.io/badge/ghcr.io-4lx69%2Fjellyfin--collection-blue?logo=github)](https://github.com/4lx69/jellyfin-collection/pkgs/container/jellyfin-collection)
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/4lx69" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+</p>
 
 <p align="center">
   <img src="docs/doc-image-1.png" width="48%" alt="JFC Screenshot 1" />
@@ -215,6 +219,16 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 See the [LICENSE](LICENSE) file for full details.
+
+## Author
+
+**4lx69** - [GitHub](https://github.com/4lx69)
+
+## Support
+
+If you find Jellyfin Collection useful, consider supporting the project:
+
+<a href="https://www.buymeacoffee.com/4lx69" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 ## Acknowledgments
 
