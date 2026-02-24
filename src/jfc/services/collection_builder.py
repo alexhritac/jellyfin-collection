@@ -980,7 +980,9 @@ class CollectionBuilder:
         order_mapping = {
             CollectionOrder.CUSTOM: "Default",
             CollectionOrder.SORT_NAME: "SortName",
-            CollectionOrder.PREMIERE_DATE: "PremiereDate",
+            # Keep app-level newest-first insertion order for release date.
+            # Jellyfin's PremiereDate display order is often oldest-first.
+            CollectionOrder.PREMIERE_DATE: "Default",
             CollectionOrder.DATE_CREATED: "DateCreated",
             CollectionOrder.COMMUNITY_RATING: "CommunityRating",
             CollectionOrder.CRITIC_RATING: "CommunityRating",  # Jellyfin uses same field
