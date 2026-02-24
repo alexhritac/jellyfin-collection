@@ -140,6 +140,7 @@ class Runner:
             jellyfin=self.jellyfin,
             tmdb=self.tmdb,
             trakt=self.trakt,
+            imdb=self.imdb,
             radarr=self.radarr,
             sonarr=self.sonarr,
             poster_generator=self.poster_generator,
