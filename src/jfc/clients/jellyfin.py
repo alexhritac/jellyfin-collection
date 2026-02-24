@@ -268,6 +268,7 @@ class JellyfinClient(BaseClient):
         params = {
             "ParentId": collection_id,
             "Fields": "ProviderIds",
+            "Recursive": True,
         }
 
         response = await self.get("/Items", params=params)
