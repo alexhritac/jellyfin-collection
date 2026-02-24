@@ -158,6 +158,8 @@ class KometaParser:
         # Parse IMDb builders
         imdb_chart = self._normalize_imdb_builder(config.get("imdb_chart"))
         imdb_list = self._normalize_imdb_builder(config.get("imdb_list"))
+        radarr_taglist = self._normalize_tag_builder(config.get("radarr_taglist"))
+        sonarr_taglist = self._normalize_tag_builder(config.get("sonarr_taglist"))
 
         # Parse plex_search (will work with Jellyfin)
         plex_search = config.get("plex_search")
@@ -192,6 +194,8 @@ class KometaParser:
             mdblist_list=config.get("mdblist_list"),
             imdb_chart=imdb_chart,
             imdb_list=imdb_list,
+            radarr_taglist=radarr_taglist,
+            sonarr_taglist=sonarr_taglist,
             plex_search=plex_search,
             # Tags
             item_radarr_tag=config.get("item_radarr_tag"),
@@ -344,6 +348,27 @@ class KometaParser:
                 normalized.append(item_str)
 
         return normalized
+
+    def _normalize_tag_builder(self, value: Any) -> Optional[dict[str, Any]]:
+        """Normalize radarr_taglist/sonarr_taglist into {tags, limit?}."""
+        if value is None:
+            return None
+
+        result: dict[str, Any] = {}
+
+        if isinstance(value, dict):
+            tags = self._normalize_string_list(value.get("tags"))
+            if tags:
+                result["tags"] = tags
+            if value.get("limit") is not None:
+                result["limit"] = value.get("limit")
+            return result if result.get("tags") else None
+
+        tags = self._normalize_string_list(value)
+        if not tags:
+            return None
+
+        return {"tags": tags}
 
     def _normalize_tmdb_discover(self, discover: dict[str, Any]) -> dict[str, Any]:
         """Normalize TMDb discover parameters."""

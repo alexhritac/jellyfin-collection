@@ -195,6 +195,10 @@ class CollectionBuilder:
             sources.append("IMDb Chart")
         if config.imdb_list:
             sources.append("IMDb List")
+        if config.radarr_taglist:
+            sources.append("Radarr Taglist")
+        if config.sonarr_taglist:
+            sources.append("Sonarr Taglist")
         if config.plex_search:
             sources.append("Library Search")
         return ", ".join(sources) if sources else "Unknown"
@@ -434,6 +438,19 @@ class CollectionBuilder:
         elif config.imdb_chart or config.imdb_list:
             logger.warning("IMDb builders configured but IMDb client is not available")
 
+        # Arr tag lists
+        if config.radarr_taglist:
+            if self.radarr and media_type == MediaType.MOVIE:
+                items.extend(await self._fetch_radarr_taglist(config.radarr_taglist))
+            elif not self.radarr:
+                logger.warning("radarr_taglist configured but Radarr client is not available")
+
+        if config.sonarr_taglist:
+            if self.sonarr and media_type == MediaType.SERIES:
+                items.extend(await self._fetch_sonarr_taglist(config.sonarr_taglist))
+            elif not self.sonarr:
+                logger.warning("sonarr_taglist configured but Sonarr client is not available")
+
         # Trakt
         if self.trakt:
             if config.trakt_trending:
@@ -460,14 +477,30 @@ class CollectionBuilder:
                 chart_items = await self._fetch_trakt_chart(config.trakt_chart, media_type)
                 items.extend(chart_items)
 
-        # Deduplicate by TMDb ID
-        seen_ids: set[int] = set()
+        # Deduplicate by external IDs while preserving order
+        seen_keys: set[tuple[str, str]] = set()
         unique_items: list[MediaItem] = []
 
         for item in items:
-            if item.tmdb_id and item.tmdb_id not in seen_ids:
-                seen_ids.add(item.tmdb_id)
-                unique_items.append(item)
+            dedupe_key: Optional[tuple[str, str]] = None
+            if item.tmdb_id:
+                dedupe_key = ("tmdb", str(item.tmdb_id))
+            elif item.imdb_id:
+                dedupe_key = ("imdb", item.imdb_id)
+            elif item.tvdb_id:
+                dedupe_key = ("tvdb", str(item.tvdb_id))
+            elif item.title:
+                year = item.year if item.year else 0
+                dedupe_key = ("title", f"{item.title.lower()}::{year}")
+
+            if not dedupe_key:
+                continue
+
+            if dedupe_key in seen_keys:
+                continue
+
+            seen_keys.add(dedupe_key)
+            unique_items.append(item)
 
         return unique_items
 
@@ -627,6 +660,91 @@ class CollectionBuilder:
             imdb_ids.extend(await self.imdb.get_list(list_id, limit=list_limit))
 
         return await self._resolve_imdb_ids(imdb_ids, media_type, limit=limit)
+
+    async def _fetch_radarr_taglist(self, config: dict[str, Any]) -> list[MediaItem]:
+        """Fetch movies from Radarr filtered by tag names."""
+        if not self.radarr:
+            return []
+
+        tags = self._normalize_imdb_ids(config.get("tags"))
+        limit = config.get("limit")
+        max_items = int(limit) if limit else None
+
+        movies = await self.radarr.get_movies()
+        tag_map = {
+            tag.get("id"): str(tag.get("label", "")).strip().lower()
+            for tag in await self.radarr.get_tags()
+        }
+        tag_set = {tag.lower() for tag in tags}
+
+        results: list[MediaItem] = []
+        for movie in movies:
+            movie_tag_ids = movie.get("tags", [])
+            movie_tag_names = {
+                tag_map[tag_id] for tag_id in movie_tag_ids if tag_id in tag_map and tag_map[tag_id]
+            }
+            if not movie_tag_names.intersection(tag_set):
+                continue
+
+            results.append(
+                Movie(
+                    title=movie.get("title", "Unknown"),
+                    year=movie.get("year"),
+                    tmdb_id=movie.get("tmdbId"),
+                    imdb_id=movie.get("imdbId"),
+                    overview=movie.get("overview"),
+                    genres=movie.get("genres", []),
+                )
+            )
+
+            if max_items and len(results) >= max_items:
+                break
+
+        logger.info(f"[Radarr] Taglist ({', '.join(tags)}): fetched {len(results)} items")
+        return results
+
+    async def _fetch_sonarr_taglist(self, config: dict[str, Any]) -> list[MediaItem]:
+        """Fetch series from Sonarr filtered by tag names."""
+        if not self.sonarr:
+            return []
+
+        tags = self._normalize_imdb_ids(config.get("tags"))
+        limit = config.get("limit")
+        max_items = int(limit) if limit else None
+
+        series_list = await self.sonarr.get_series()
+        tag_map = {
+            tag.get("id"): str(tag.get("label", "")).strip().lower()
+            for tag in await self.sonarr.get_tags()
+        }
+        tag_set = {tag.lower() for tag in tags}
+
+        results: list[MediaItem] = []
+        for series in series_list:
+            series_tag_ids = series.get("tags", [])
+            series_tag_names = {
+                tag_map[tag_id] for tag_id in series_tag_ids if tag_id in tag_map and tag_map[tag_id]
+            }
+            if not series_tag_names.intersection(tag_set):
+                continue
+
+            results.append(
+                Series(
+                    title=series.get("title", "Unknown"),
+                    year=series.get("year"),
+                    tmdb_id=series.get("tmdbId"),
+                    tvdb_id=series.get("tvdbId"),
+                    imdb_id=series.get("imdbId"),
+                    overview=series.get("overview"),
+                    genres=series.get("genres", []),
+                )
+            )
+
+            if max_items and len(results) >= max_items:
+                break
+
+        logger.info(f"[Sonarr] Taglist ({', '.join(tags)}): fetched {len(results)} items")
+        return results
 
     def _normalize_imdb_ids(self, values: Any) -> list[str]:
         """Normalize IMDb chart/list ID values into a clean list."""

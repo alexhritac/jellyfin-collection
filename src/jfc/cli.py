@@ -353,6 +353,10 @@ def list_collections(
                 sources.append("IMDb Chart")
             if config.imdb_list:
                 sources.append("IMDb List")
+            if config.radarr_taglist:
+                sources.append("Radarr Taglist")
+            if config.sonarr_taglist:
+                sources.append("Sonarr Taglist")
             if config.plex_search:
                 sources.append("Library Search")
 

@@ -204,6 +204,8 @@ class CollectionConfig(BaseModel):
 
     imdb_chart: Optional[dict[str, Any]] = None
     imdb_list: Optional[dict[str, Any]] = None
+    radarr_taglist: Optional[dict[str, Any]] = None
+    sonarr_taglist: Optional[dict[str, Any]] = None
 
     # Plex/Jellyfin search (for existing library items)
     plex_search: Optional[dict[str, Any]] = None
