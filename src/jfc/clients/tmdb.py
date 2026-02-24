@@ -342,6 +342,92 @@ class TMDbClient(BaseClient):
         return all_results
 
     # =========================================================================
+    # Lists
+    # =========================================================================
+
+    async def get_list(
+        self,
+        list_id: str | int,
+        media_type: Optional[MediaType] = None,
+        limit: Optional[int] = None,
+    ) -> list[MediaItem]:
+        """
+        Get items from a TMDb list.
+
+        Args:
+            list_id: TMDb list ID
+            media_type: Optional filter by media type
+            limit: Optional maximum number of items
+
+        Returns:
+            List of media items
+        """
+        all_results: list[MediaItem] = []
+        page = 1
+
+        while True:
+            params = self._params(page=page)
+            response = await self.get(f"/list/{list_id}", params=params)
+
+            if response.status_code == 404:
+                logger.warning(f"TMDb list not found: {list_id}")
+                return []
+
+            response.raise_for_status()
+
+            data = response.json()
+            results = data.get("items") or data.get("results", [])
+            total_pages = data.get("total_pages", 1)
+
+            for item in results:
+                parsed_item = self._parse_list_item(item, media_type)
+                if parsed_item:
+                    all_results.append(parsed_item)
+
+                if limit and len(all_results) >= limit:
+                    self._log_items(f"List {list_id}", all_results, params)
+                    return all_results
+
+            if page >= total_pages or not results:
+                break
+            page += 1
+
+        self._log_items(f"List {list_id}", all_results, self._params())
+        return all_results
+
+    def _parse_list_item(
+        self,
+        data: dict[str, Any],
+        media_type: Optional[MediaType] = None,
+    ) -> Optional[MediaItem]:
+        """Parse a TMDb list item into Movie/Series."""
+        item_type = (data.get("media_type") or "").lower()
+
+        if item_type == "movie":
+            if media_type is None or media_type == MediaType.MOVIE:
+                return self._parse_movie(data)
+            return None
+
+        if item_type == "tv":
+            if media_type is None or media_type == MediaType.SERIES:
+                return self._parse_series(data)
+            return None
+
+        # Fallback for entries without media_type
+        if media_type == MediaType.MOVIE:
+            return self._parse_movie(data)
+        if media_type == MediaType.SERIES:
+            return self._parse_series(data)
+
+        if data.get("title") or data.get("release_date"):
+            return self._parse_movie(data)
+        if data.get("name") or data.get("first_air_date"):
+            return self._parse_series(data)
+
+        logger.debug(f"Skipping TMDb list item with unknown type: {data.get('id')}")
+        return None
+
+    # =========================================================================
     # Airing / Now Playing
     # =========================================================================
 
