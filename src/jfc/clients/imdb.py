@@ -1,5 +1,6 @@
 """IMDb client for charts and custom lists."""
 
+import json
 import re
 from typing import Optional
 
@@ -24,8 +25,14 @@ class IMDbClient(BaseClient):
         super().__init__(
             base_url=self.BASE_URL,
             headers={
-                "Accept": "text/html,application/xhtml+xml",
-                "User-Agent": "Mozilla/5.0 (compatible; jfc/1.0)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) "
+                    "Gecko/20100101 Firefox/145.0"
+                ),
             },
         )
 
@@ -44,6 +51,11 @@ class IMDbClient(BaseClient):
 
         response.raise_for_status()
         imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
+        if response.status_code == 202 and not imdb_ids:
+            logger.warning(
+                f"[IMDb] Chart {chart_key}: received HTTP 202 without title ids "
+                "(likely challenge response)"
+            )
         logger.info(f"[IMDb] Chart {chart_key}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
@@ -61,6 +73,11 @@ class IMDbClient(BaseClient):
 
         response.raise_for_status()
         imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
+        if response.status_code == 202 and not imdb_ids:
+            logger.warning(
+                f"[IMDb] List {normalized}: received HTTP 202 without title ids "
+                "(likely challenge response)"
+            )
         logger.info(f"[IMDb] List {normalized}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
@@ -77,7 +94,11 @@ class IMDbClient(BaseClient):
         return None
 
     def _extract_imdb_ids(self, html: str, limit: int = 250) -> list[str]:
-        """Extract unique tt* IDs from HTML in first-seen order."""
+        """Extract unique tt* IDs from IMDb HTML in first-seen order."""
+        next_data_ids = self._extract_imdb_ids_from_next_data(html, limit=limit)
+        if next_data_ids:
+            return next_data_ids
+
         seen: set[str] = set()
         ids: list[str] = []
 
@@ -90,4 +111,48 @@ class IMDbClient(BaseClient):
             if len(ids) >= limit:
                 break
 
+        return ids
+
+    def _extract_imdb_ids_from_next_data(self, html: str, limit: int = 250) -> list[str]:
+        """Extract IDs from IMDb __NEXT_DATA__ payload when present."""
+        match = re.search(
+            r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
+            html,
+            re.DOTALL,
+        )
+        if not match:
+            return []
+
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return []
+
+        seen: set[str] = set()
+        ids: list[str] = []
+
+        def walk(value: object) -> None:
+            if len(ids) >= limit:
+                return
+
+            if isinstance(value, str):
+                if re.fullmatch(r"tt\d{7,9}", value) and value not in seen:
+                    seen.add(value)
+                    ids.append(value)
+                return
+
+            if isinstance(value, list):
+                for item in value:
+                    walk(item)
+                    if len(ids) >= limit:
+                        break
+                return
+
+            if isinstance(value, dict):
+                for item in value.values():
+                    walk(item)
+                    if len(ids) >= limit:
+                        break
+
+        walk(payload)
         return ids

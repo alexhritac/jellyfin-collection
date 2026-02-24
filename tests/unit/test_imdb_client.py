@@ -42,3 +42,21 @@ def test_extract_imdb_ids_dedup_preserves_order() -> None:
     ids = client._extract_imdb_ids(html)
 
     assert ids == ["tt0111161", "tt0068646"]
+
+
+def test_extract_imdb_ids_from_next_data() -> None:
+    """Extraction should prefer IMDb __NEXT_DATA__ payload when present."""
+    client = IMDbClient()
+    html = """
+<html>
+  <head>
+    <script id="__NEXT_DATA__" type="application/json">
+      {"props":{"pageProps":{"ids":["tt1234567","tt7654321","tt1234567"]}}}
+    </script>
+  </head>
+</html>
+"""
+
+    ids = client._extract_imdb_ids(html)
+
+    assert ids == ["tt1234567", "tt7654321"]
