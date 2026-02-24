@@ -481,6 +481,53 @@ class TMDbClient(BaseClient):
         response.raise_for_status()
         return self._parse_series_details(response.json())
 
+    async def find_by_imdb_id(
+        self,
+        imdb_id: str,
+        media_type: Optional[MediaType] = None,
+    ) -> Optional[MediaItem]:
+        """Resolve IMDb ID to TMDb movie/series item via /find endpoint."""
+        response = await self.get(
+            f"/find/{imdb_id}",
+            params=self._params(external_source="imdb_id"),
+        )
+
+        if response.status_code == 404:
+            return None
+
+        response.raise_for_status()
+        data = response.json()
+
+        if media_type == MediaType.MOVIE:
+            results = data.get("movie_results", [])
+            if results:
+                item = self._parse_movie(results[0])
+                item.imdb_id = imdb_id
+                return item
+            return None
+
+        if media_type == MediaType.SERIES:
+            results = data.get("tv_results", [])
+            if results:
+                item = self._parse_series(results[0])
+                item.imdb_id = imdb_id
+                return item
+            return None
+
+        movie_results = data.get("movie_results", [])
+        if movie_results:
+            item = self._parse_movie(movie_results[0])
+            item.imdb_id = imdb_id
+            return item
+
+        tv_results = data.get("tv_results", [])
+        if tv_results:
+            item = self._parse_series(tv_results[0])
+            item.imdb_id = imdb_id
+            return item
+
+        return None
+
     # =========================================================================
     # Search
     # =========================================================================

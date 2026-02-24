@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from jfc.clients.imdb import IMDbClient
 from jfc.clients.jellyfin import JellyfinClient
 from jfc.clients.radarr import RadarrClient
 from jfc.clients.sonarr import SonarrClient
@@ -36,6 +37,7 @@ class CollectionBuilder:
         jellyfin: JellyfinClient,
         tmdb: TMDbClient,
         trakt: Optional[TraktClient] = None,
+        imdb: Optional[IMDbClient] = None,
         radarr: Optional[RadarrClient] = None,
         sonarr: Optional[SonarrClient] = None,
         poster_generator: Optional[PosterGenerator] = None,
@@ -48,6 +50,7 @@ class CollectionBuilder:
             jellyfin: Jellyfin API client
             tmdb: TMDb API client
             trakt: Optional Trakt API client
+            imdb: Optional IMDb client
             radarr: Optional Radarr client for adding missing movies
             sonarr: Optional Sonarr client for adding missing series
             poster_generator: Optional AI poster generator
@@ -56,6 +59,7 @@ class CollectionBuilder:
         self.jellyfin = jellyfin
         self.tmdb = tmdb
         self.trakt = trakt
+        self.imdb = imdb
         self.radarr = radarr
         self.sonarr = sonarr
         self.poster_generator = poster_generator
@@ -186,6 +190,10 @@ class CollectionBuilder:
         if config.trakt_chart:
             chart = config.trakt_chart.get("chart", "unknown")
             sources.append(f"Trakt {chart.capitalize()}")
+        if config.imdb_chart:
+            sources.append("IMDb Chart")
+        if config.imdb_list:
+            sources.append("IMDb List")
         if config.plex_search:
             sources.append("Library Search")
         return ", ".join(sources) if sources else "Unknown"
@@ -371,6 +379,15 @@ class CollectionBuilder:
                     )
                 )
 
+        # IMDb
+        if self.imdb:
+            if config.imdb_chart:
+                items.extend(await self._fetch_imdb_chart(config.imdb_chart, media_type))
+            if config.imdb_list:
+                items.extend(await self._fetch_imdb_list(config.imdb_list, media_type))
+        elif config.imdb_chart or config.imdb_list:
+            logger.warning("IMDb builders configured but IMDb client is not available")
+
         # Trakt
         if self.trakt:
             if config.trakt_trending:
@@ -526,6 +543,84 @@ class CollectionBuilder:
 
         logger.warning(f"Invalid tmdb_list value '{value}' expected ID or TMDb list URL")
         return None
+
+    async def _fetch_imdb_chart(
+        self,
+        imdb_chart: dict[str, Any],
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """Fetch items from IMDb charts and resolve to TMDb items."""
+        if not self.imdb:
+            return []
+
+        chart_ids = self._normalize_imdb_ids(imdb_chart.get("list_ids"))
+        limit = imdb_chart.get("limit")
+        imdb_ids: list[str] = []
+
+        for chart_id in chart_ids:
+            chart_limit = int(limit) if limit else 250
+            imdb_ids.extend(await self.imdb.get_chart(chart_id, limit=chart_limit))
+
+        return await self._resolve_imdb_ids(imdb_ids, media_type, limit=limit)
+
+    async def _fetch_imdb_list(
+        self,
+        imdb_list: dict[str, Any],
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """Fetch items from IMDb custom lists and resolve to TMDb items."""
+        if not self.imdb:
+            return []
+
+        list_ids = self._normalize_imdb_ids(imdb_list.get("list_ids"))
+        limit = imdb_list.get("limit")
+        imdb_ids: list[str] = []
+
+        for list_id in list_ids:
+            list_limit = int(limit) if limit else 250
+            imdb_ids.extend(await self.imdb.get_list(list_id, limit=list_limit))
+
+        return await self._resolve_imdb_ids(imdb_ids, media_type, limit=limit)
+
+    def _normalize_imdb_ids(self, values: Any) -> list[str]:
+        """Normalize IMDb chart/list ID values into a clean list."""
+        if values is None:
+            return []
+
+        raw_values = values if isinstance(values, list) else [values]
+        normalized: list[str] = []
+
+        for value in raw_values:
+            value_str = str(value).strip()
+            if value_str:
+                normalized.append(value_str)
+
+        return normalized
+
+    async def _resolve_imdb_ids(
+        self,
+        imdb_ids: list[str],
+        media_type: MediaType,
+        limit: Optional[int] = None,
+    ) -> list[MediaItem]:
+        """Resolve IMDb IDs to TMDb media items."""
+        resolved: list[MediaItem] = []
+        seen: set[str] = set()
+        max_items = int(limit) if limit else None
+
+        for imdb_id in imdb_ids:
+            if imdb_id in seen:
+                continue
+            seen.add(imdb_id)
+
+            item = await self.tmdb.find_by_imdb_id(imdb_id, media_type=media_type)
+            if item:
+                resolved.append(item)
+
+            if max_items and len(resolved) >= max_items:
+                break
+
+        return resolved
 
     async def _fetch_trakt_chart(
         self,

@@ -155,6 +155,10 @@ class KometaParser:
         if "trakt_chart" in config:
             trakt_chart = config["trakt_chart"]
 
+        # Parse IMDb builders
+        imdb_chart = self._normalize_imdb_builder(config.get("imdb_chart"))
+        imdb_list = self._normalize_imdb_builder(config.get("imdb_list"))
+
         # Parse plex_search (will work with Jellyfin)
         plex_search = config.get("plex_search")
 
@@ -186,7 +190,8 @@ class KometaParser:
             trakt_chart=trakt_chart,
             trakt_list=config.get("trakt_list"),
             mdblist_list=config.get("mdblist_list"),
-            imdb_list=config.get("imdb_list"),
+            imdb_chart=imdb_chart,
+            imdb_list=imdb_list,
             plex_search=plex_search,
             # Tags
             item_radarr_tag=config.get("item_radarr_tag"),
@@ -302,6 +307,43 @@ class KometaParser:
 
         logger.warning(f"Unknown collection_order '{value}', defaulting to 'custom'")
         return CollectionOrder.CUSTOM
+
+    def _normalize_imdb_builder(self, value: Any) -> Optional[dict[str, Any]]:
+        """Normalize imdb_chart/imdb_list config into {list_ids, limit?}."""
+        if value is None:
+            return None
+
+        result: dict[str, Any] = {}
+
+        if isinstance(value, dict):
+            list_ids = self._normalize_string_list(value.get("list_ids"))
+            if list_ids:
+                result["list_ids"] = list_ids
+            if value.get("limit") is not None:
+                result["limit"] = value.get("limit")
+
+            return result if result.get("list_ids") else None
+
+        list_ids = self._normalize_string_list(value)
+        if not list_ids:
+            return None
+
+        return {"list_ids": list_ids}
+
+    def _normalize_string_list(self, value: Any) -> list[str]:
+        """Normalize scalar/list values to a clean string list."""
+        if value is None:
+            return []
+
+        values = value if isinstance(value, list) else [value]
+        normalized: list[str] = []
+
+        for item in values:
+            item_str = str(item).strip()
+            if item_str:
+                normalized.append(item_str)
+
+        return normalized
 
     def _normalize_tmdb_discover(self, discover: dict[str, Any]) -> dict[str, Any]:
         """Normalize TMDb discover parameters."""

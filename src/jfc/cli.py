@@ -349,6 +349,10 @@ def list_collections(
                 sources.append(f"Trakt Trending ({config.trakt_trending})")
             if config.trakt_chart:
                 sources.append(f"Trakt Chart ({config.trakt_chart.get('chart', 'unknown')})")
+            if config.imdb_chart:
+                sources.append("IMDb Chart")
+            if config.imdb_list:
+                sources.append("IMDb List")
             if config.plex_search:
                 sources.append("Library Search")
 
