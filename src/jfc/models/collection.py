@@ -202,7 +202,8 @@ class CollectionConfig(BaseModel):
 
     mdblist_list: Optional[str] = None
 
-    imdb_list: Optional[str] = None
+    imdb_chart: Optional[dict[str, Any]] = None
+    imdb_list: Optional[dict[str, Any]] = None
 
     # Plex/Jellyfin search (for existing library items)
     plex_search: Optional[dict[str, Any]] = None

@@ -100,6 +100,30 @@ collections:
         custom = next(c for c in collections if c.name == "TMDb Custom List")
         assert custom.tmdb_list == [710, "https://www.themoviedb.org/list/710"]
 
+    def test_parse_collection_with_imdb_builders(self, temp_config_dir: Path):
+        """Test parsing imdb_chart and imdb_list builders."""
+        collection_file = temp_config_dir / "Films.yml"
+        collection_file.write_text(
+            """
+collections:
+  "IMDb Mix":
+    imdb_chart:
+      list_ids:
+        - tvmeter
+    imdb_list:
+      list_ids:
+        - ls055592025
+""",
+            encoding="utf-8",
+        )
+
+        parser = KometaParser(temp_config_dir)
+        collections = parser.parse_collection_file(collection_file)
+
+        imdb_mix = next(c for c in collections if c.name == "IMDb Mix")
+        assert imdb_mix.imdb_chart == {"list_ids": ["tvmeter"]}
+        assert imdb_mix.imdb_list == {"list_ids": ["ls055592025"]}
+
     def test_parse_collection_order(self, temp_config_dir: Path, sample_films_yml: Path):
         """Test parsing collection_order."""
         parser = KometaParser(temp_config_dir)
