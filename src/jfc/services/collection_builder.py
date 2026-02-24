@@ -22,6 +22,7 @@ from jfc.models.collection import (
     CollectionFilter,
     CollectionItem,
     CollectionOrder,
+    SyncMode,
 )
 from jfc.models.media import MediaItem, MediaType, Movie, Series
 from jfc.models.report import CollectionReport
@@ -227,10 +228,19 @@ class CollectionBuilder:
 
         # Get or create Jellyfin collection
         jellyfin_collections = await self.jellyfin.get_collections()
-        existing = next(
-            (c for c in jellyfin_collections if c["Name"] == collection.config.name),
-            None,
-        )
+        existing_matches = [
+            c for c in jellyfin_collections if c.get("Name") == collection.config.name
+        ]
+        existing = None
+        if existing_matches:
+            existing = max(existing_matches, key=lambda c: c.get("ChildCount", 0))
+            if len(existing_matches) > 1:
+                ids = ", ".join(c.get("Id", "unknown") for c in existing_matches)
+                logger.warning(
+                    f"Found {len(existing_matches)} collections named "
+                    f"'{collection.config.name}'. Using ID {existing.get('Id')} "
+                    f"(largest ChildCount). IDs: {ids}"
+                )
 
         report.collection_existed = existing is not None
 
@@ -261,9 +271,12 @@ class CollectionBuilder:
             ]
             target_ids = set(target_ids_list)
 
-            # Calculate changes
+            # Calculate changes based on sync mode
             to_add = target_ids - current_ids
-            to_remove = current_ids - target_ids
+            if collection.config.sync_mode == SyncMode.SYNC:
+                to_remove = current_ids - target_ids
+            else:
+                to_remove = set()
 
             # Track added/removed titles for report
             added_jellyfin_ids = to_add
