@@ -80,6 +80,26 @@ class TestKometaParser:
         assert 28 in action.tmdb_discover["with_genres"]
         assert action.limit == 30
 
+    def test_parse_collection_with_tmdb_list(self, temp_config_dir: Path):
+        """Test parsing collection with tmdb_list."""
+        collection_file = temp_config_dir / "Films.yml"
+        collection_file.write_text(
+            """
+collections:
+  "TMDb Custom List":
+    tmdb_list:
+      - 710
+      - https://www.themoviedb.org/list/710
+""",
+            encoding="utf-8",
+        )
+
+        parser = KometaParser(temp_config_dir)
+        collections = parser.parse_collection_file(collection_file)
+
+        custom = next(c for c in collections if c.name == "TMDb Custom List")
+        assert custom.tmdb_list == [710, "https://www.themoviedb.org/list/710"]
+
     def test_parse_collection_order(self, temp_config_dir: Path, sample_films_yml: Path):
         """Test parsing collection_order."""
         parser = KometaParser(temp_config_dir)

@@ -180,6 +180,7 @@ class KometaParser:
             tmdb_trending_daily=config.get("tmdb_trending_daily"),
             tmdb_popular=config.get("tmdb_popular"),
             tmdb_discover=tmdb_discover,
+            tmdb_list=config.get("tmdb_list"),
             trakt_trending=config.get("trakt_trending"),
             trakt_popular=config.get("trakt_popular"),
             trakt_chart=trakt_chart,

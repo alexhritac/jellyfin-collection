@@ -1,6 +1,7 @@
 """Service for building collections from Kometa configurations."""
 
 import random
+import re
 import time
 from datetime import date
 from pathlib import Path
@@ -176,6 +177,8 @@ class CollectionBuilder:
             sources.append("TMDb Popular")
         if config.tmdb_discover:
             sources.append("TMDb Discover")
+        if config.tmdb_list:
+            sources.append("TMDb List")
         if config.trakt_trending:
             sources.append("Trakt Trending")
         if config.trakt_popular:
@@ -357,6 +360,17 @@ class CollectionBuilder:
             )
             items.extend(discover_items)
 
+        # TMDb List
+        if config.tmdb_list:
+            list_ids = self._normalize_tmdb_list_ids(config.tmdb_list)
+            for list_id in list_ids:
+                items.extend(
+                    await self.tmdb.get_list(
+                        list_id=list_id,
+                        media_type=media_type,
+                    )
+                )
+
         # Trakt
         if self.trakt:
             if config.trakt_trending:
@@ -480,6 +494,38 @@ class CollectionBuilder:
                 with_origin_country=discover.get("with_origin_country"),
                 limit=adjusted_limit,
             )
+
+    def _normalize_tmdb_list_ids(
+        self,
+        tmdb_list: str | int | list[str | int],
+    ) -> list[int]:
+        """Normalize tmdb_list config value to a list of TMDb list IDs."""
+        values = tmdb_list if isinstance(tmdb_list, list) else [tmdb_list]
+        normalized_ids: list[int] = []
+
+        for value in values:
+            list_id = self._extract_tmdb_list_id(value)
+            if list_id is not None:
+                normalized_ids.append(list_id)
+
+        return normalized_ids
+
+    def _extract_tmdb_list_id(self, value: str | int) -> Optional[int]:
+        """Extract numeric TMDb list ID from int, string, or list URL."""
+        if isinstance(value, int):
+            return value
+
+        raw_value = str(value).strip()
+        if raw_value.isdigit():
+            return int(raw_value)
+
+        # Accept full URL format like: https://www.themoviedb.org/list/710
+        match = re.search(r"/list/(\d+)", raw_value)
+        if match:
+            return int(match.group(1))
+
+        logger.warning(f"Invalid tmdb_list value '{value}' expected ID or TMDb list URL")
+        return None
 
     async def _fetch_trakt_chart(
         self,
