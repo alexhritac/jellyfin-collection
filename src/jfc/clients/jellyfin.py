@@ -17,6 +17,8 @@ SUPPORTED_IMAGE_FORMATS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 class JellyfinClient(BaseClient):
     """Client for Jellyfin API."""
 
+    COLLECTION_ITEMS_BATCH_SIZE = 50
+
     def __init__(self, url: str, api_key: str):
         """
         Initialize Jellyfin client.
@@ -321,17 +323,25 @@ class JellyfinClient(BaseClient):
         if not item_ids:
             return True
 
-        response = await self.post(
-            f"/Collections/{collection_id}/Items",
-            params={"Ids": ",".join(item_ids)},
-        )
+        success = True
+        for i in range(0, len(item_ids), self.COLLECTION_ITEMS_BATCH_SIZE):
+            batch = item_ids[i : i + self.COLLECTION_ITEMS_BATCH_SIZE]
+            response = await self.post(
+                f"/Collections/{collection_id}/Items",
+                params={"Ids": ",".join(batch)},
+            )
 
-        if response.status_code == 204:
+            if response.status_code != 204:
+                logger.error(
+                    f"Failed to add items to collection: {response.status_code} "
+                    f"(batch {i // self.COLLECTION_ITEMS_BATCH_SIZE + 1})"
+                )
+                success = False
+                break
+
+        if success:
             logger.debug(f"Added {len(item_ids)} items to collection {collection_id}")
-            return True
-
-        logger.error(f"Failed to add items to collection: {response.status_code}")
-        return False
+        return success
 
     async def remove_from_collection(
         self,
@@ -351,17 +361,25 @@ class JellyfinClient(BaseClient):
         if not item_ids:
             return True
 
-        response = await self.delete(
-            f"/Collections/{collection_id}/Items",
-            params={"Ids": ",".join(item_ids)},
-        )
+        success = True
+        for i in range(0, len(item_ids), self.COLLECTION_ITEMS_BATCH_SIZE):
+            batch = item_ids[i : i + self.COLLECTION_ITEMS_BATCH_SIZE]
+            response = await self.delete(
+                f"/Collections/{collection_id}/Items",
+                params={"Ids": ",".join(batch)},
+            )
 
-        if response.status_code == 204:
+            if response.status_code != 204:
+                logger.error(
+                    f"Failed to remove items from collection: {response.status_code} "
+                    f"(batch {i // self.COLLECTION_ITEMS_BATCH_SIZE + 1})"
+                )
+                success = False
+                break
+
+        if success:
             logger.debug(f"Removed {len(item_ids)} items from collection {collection_id}")
-            return True
-
-        logger.error(f"Failed to remove items from collection: {response.status_code}")
-        return False
+        return success
 
     async def delete_collection(self, collection_id: str) -> bool:
         """

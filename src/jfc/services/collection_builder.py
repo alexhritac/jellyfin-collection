@@ -294,12 +294,20 @@ class CollectionBuilder:
             if needs_reorder and target_ids_list:
                 # Clear all items and re-add in sorted order
                 if current_ids:
-                    await self.jellyfin.remove_from_collection(
+                    removed_ok = await self.jellyfin.remove_from_collection(
                         collection.jellyfin_id, list(current_ids)
                     )
-                await self.jellyfin.add_to_collection(
+                    if not removed_ok:
+                        raise RuntimeError(
+                            f"Failed to clear collection '{collection.config.name}' before reorder"
+                        )
+                added_ok = await self.jellyfin.add_to_collection(
                     collection.jellyfin_id, target_ids_list
                 )
+                if not added_ok:
+                    raise RuntimeError(
+                        f"Failed to re-add items while reordering '{collection.config.name}'"
+                    )
                 logger.info(
                     f"Reordered '{collection.config.name}' ({len(target_ids_list)} items, "
                     f"order={collection.config.collection_order.value})"
@@ -307,11 +315,23 @@ class CollectionBuilder:
             else:
                 # Simple add/remove (no reordering needed)
                 if to_add:
-                    await self.jellyfin.add_to_collection(collection.jellyfin_id, list(to_add))
+                    added_ok = await self.jellyfin.add_to_collection(
+                        collection.jellyfin_id, list(to_add)
+                    )
+                    if not added_ok:
+                        raise RuntimeError(
+                            f"Failed to add items to collection '{collection.config.name}'"
+                        )
                     logger.info(f"Added {len(to_add)} items to '{collection.config.name}'")
 
                 if to_remove:
-                    await self.jellyfin.remove_from_collection(collection.jellyfin_id, list(to_remove))
+                    removed_ok = await self.jellyfin.remove_from_collection(
+                        collection.jellyfin_id, list(to_remove)
+                    )
+                    if not removed_ok:
+                        raise RuntimeError(
+                            f"Failed to remove items from collection '{collection.config.name}'"
+                        )
                     logger.info(f"Removed {len(to_remove)} items from '{collection.config.name}'")
 
             # Update report
