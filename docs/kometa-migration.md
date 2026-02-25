@@ -74,9 +74,13 @@ Most builders are supported. Here's the mapping:
 | `trakt_popular` | ✅ Supported | - |
 | `trakt_chart` | ✅ Supported | - |
 | `trakt_list` | ✅ Supported | - |
-| `plex_search` | ✅ Supported | Searches Jellyfin |
+| `plex_search` | 🚧 Planned | Parsed but not implemented as a fetch source |
 | `mdblist_list` | 🚧 Planned | - |
-| `imdb_list` | 🚧 Planned | - |
+| `imdb_chart` | ✅ Supported | top, boxoffice, moviemeter, tvmeter |
+| `imdb_list` | ✅ Supported | `ls...` lists |
+| `tmdb_list` | ✅ Supported | ID/string/URL accepted |
+| `radarr_taglist` | ✅ Supported | Build movie collections from Radarr tags |
+| `sonarr_taglist` | ✅ Supported | Build series collections from Sonarr tags |
 | `letterboxd_list` | ❌ Not supported | - |
 | `reciperr_list` | ❌ Not supported | - |
 
@@ -153,12 +157,12 @@ collections:
       all:
         resolution: 4k
 
-# After (JFC with plex_search)
+# After (JFC with a supported source builder)
 collections:
   "4K Movies":
-    plex_search:
-      all:
-        resolution: 4K
+    tmdb_discover:
+      sort_by: popularity.desc
+      limit: 50
 ```
 
 ### Metadata

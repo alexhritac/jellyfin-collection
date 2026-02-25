@@ -22,7 +22,7 @@ If you're migrating from Plex and miss [Kometa](https://github.com/Kometa-Team/K
 
 - **Kometa YAML Compatibility** - Use your existing Plex Meta Manager/Kometa configurations
 - **Jellyfin Native** - Creates and manages collections directly in Jellyfin
-- **Multiple Providers** - TMDb, Trakt, MDBList support for discovering content
+- **Multiple Providers** - TMDb, Trakt, IMDb, and Arr taglist sources
 - **Sonarr/Radarr Integration** - Automatically request missing media
 - **AI Poster Generation** - Generate unique collection posters using OpenAI
 - **Rich Discord Notifications** - Detailed notifications with poster images
@@ -165,19 +165,32 @@ SCHEDULER_RUN_ON_START=true             # Sync on container start
 SCHEDULER_TIMEZONE=Europe/Paris
 ```
 
+Additional useful flags:
+
+```bash
+SCHEDULER_RUN_ALL_ON_START=false        # Run all collections at startup
+MATCHER_PRELOAD_LIMIT=50000             # Max preloaded items per library
+```
+
 ## Supported Builders
 
 | Builder | Status | Description |
 |---------|--------|-------------|
-| `tmdb_trending_weekly` | ✅ | TMDb weekly trending |
-| `tmdb_trending_daily` | ✅ | TMDb daily trending |
-| `tmdb_popular` | ✅ | TMDb popular movies/shows |
-| `tmdb_discover` | ✅ | TMDb discover with filters |
-| `trakt_trending` | ✅ | Trakt trending |
-| `trakt_popular` | ✅ | Trakt popular |
-| `trakt_chart` | ✅ | Trakt charts (watched, etc.) |
-| `plex_search` | ✅ | Search Jellyfin library |
-| `mdblist_list` | 🚧 | MDBList lists (planned) |
+| `tmdb_trending_weekly` | Supported | TMDb weekly trending |
+| `tmdb_trending_daily` | Supported | TMDb daily trending |
+| `tmdb_popular` | Supported | TMDb popular movies/shows |
+| `tmdb_discover` | Supported | TMDb discover with filters |
+| `tmdb_list` | Supported | TMDb custom lists by ID/string/URL |
+| `trakt_trending` | Supported | Trakt trending |
+| `trakt_popular` | Supported | Trakt popular |
+| `trakt_chart` | Supported | Trakt charts (watched, etc.) |
+| `trakt_list` | Supported | Trakt custom lists |
+| `imdb_chart` | Supported | IMDb charts (`top`, `boxoffice`, `moviemeter`, `tvmeter`) |
+| `imdb_list` | Supported | IMDb user lists (`ls...`) |
+| `radarr_taglist` | Supported | Build movie collections from Radarr tags |
+| `sonarr_taglist` | Supported | Build series collections from Sonarr tags |
+| `plex_search` | Parsed only | Parsed for compatibility, not fetched yet |
+| `mdblist_list` | Planned | MDBList lists (planned) |
 
 ## Project Structure
 

@@ -228,8 +228,14 @@ class CollectionConfig(BaseModel):
     tmdb_trending_daily: Optional[int]
     tmdb_popular: Optional[int]
     tmdb_discover: Optional[dict]
+    tmdb_list: Optional[str | int | list[str | int]]
     trakt_trending: Optional[int]
+    trakt_popular: Optional[int]
     trakt_chart: Optional[dict]
+    imdb_chart: Optional[dict]
+    imdb_list: Optional[dict]
+    radarr_taglist: Optional[dict]
+    sonarr_taglist: Optional[dict]
     plex_search: Optional[dict]
 
     # Filters
@@ -259,6 +265,10 @@ class Settings(BaseSettings):
     jellyfin_url: str
     jellyfin_api_key: str
     tmdb_api_key: str
+    matcher_preload_limit: int = 50000
+    scheduler_run_on_start: bool = True
+    scheduler_run_all_on_start: bool = False
+    scheduler_ignore_collection_schedule: bool = False
     # ... etc
 
     model_config = SettingsConfigDict(

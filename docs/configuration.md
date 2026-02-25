@@ -102,12 +102,15 @@ settings:
     collections_cron: "0 3 * * *"    # Daily at 3am
     posters_cron: "0 4 1 * *"        # 1st of month at 4am
     run_on_start: true               # Sync on container start
+    run_all_on_start: false          # Run all collections on startup
+    ignore_collection_schedule: false # Ignore per-collection schedule on cron runs
     timezone: Europe/Paris           # Timezone for cron
 
   # ---------------------------------------------------------------------------
   # APPLICATION
   # ---------------------------------------------------------------------------
   log_level: INFO                    # DEBUG, INFO, WARNING, ERROR
+  matcher_preload_limit: 50000       # Max preloaded items per library
   dry_run: false                     # Preview mode (no changes)
 ```
 
@@ -247,6 +250,16 @@ Available discover parameters:
 - `sort_by` - Sort order
 - `limit` - Max results
 
+#### `tmdb_list`
+
+```yaml
+collections:
+  "TMDb List":
+    tmdb_list:
+      - 710
+      - https://www.themoviedb.org/list/710
+```
+
 ### Trakt Builders
 
 #### `trakt_trending` / `trakt_popular`
@@ -270,9 +283,57 @@ collections:
 
 Chart types: `watched`, `trending`, `popular`, `recommended`
 
+### IMDb Builders
+
+#### `imdb_chart`
+
+```yaml
+collections:
+  "IMDb Top 250":
+    imdb_chart:
+      list_ids:
+        - top
+      limit: 250
+```
+
+Supported chart IDs: `top`, `boxoffice`, `moviemeter`, `tvmeter`
+
+#### `imdb_list`
+
+```yaml
+collections:
+  "IMDb List":
+    imdb_list:
+      list_ids:
+        - ls055592025
+```
+
+### Arr Taglist Builders
+
+#### `radarr_taglist` (Movies)
+
+```yaml
+collections:
+  "Best Motion Picture":
+    radarr_taglist:
+      tags:
+        - best-motion-picture
+      limit: 100
+```
+
+#### `sonarr_taglist` (Shows)
+
+```yaml
+collections:
+  "Backlog Series":
+    sonarr_taglist:
+      tags:
+        - backlog
+```
+
 ### Library Search
 
-Search your Jellyfin library:
+`plex_search` is parsed but not implemented as a fetch source yet.
 
 ```yaml
 collections:
@@ -342,6 +403,12 @@ For the scheduler daemon (in `config.yml`):
 | `0 */6 * * *` | Every 6 hours |
 | `0 4 1 * *` | 1st of month at 4:00 AM |
 | `0 3 * * 0` | Every Sunday at 3:00 AM |
+
+Startup behavior flags:
+
+- `run_on_start` - Run a sync when the scheduler starts.
+- `run_all_on_start` - On startup run, process all collections regardless of per-collection schedule.
+- `ignore_collection_schedule` - For regular scheduled cron runs, ignore per-collection schedule rules.
 
 ## Data Directories
 
