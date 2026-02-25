@@ -65,7 +65,7 @@ class JellyfinClient(BaseClient):
         base_params = {
             "ParentId": library_id,
             "Recursive": True,
-            "Fields": "ProviderIds,Path,Overview",
+            "Fields": "ProviderIds,Path,Overview,Genres",
         }
 
         if media_type == MediaType.MOVIE:
