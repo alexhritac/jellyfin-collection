@@ -11,14 +11,16 @@ from jfc.models.media import LibraryItem, MediaItem, MediaType
 class MediaMatcher:
     """Service for matching media items to Jellyfin library."""
 
-    def __init__(self, jellyfin: JellyfinClient):
+    def __init__(self, jellyfin: JellyfinClient, preload_limit: int = 50000):
         """
         Initialize media matcher.
 
         Args:
             jellyfin: Jellyfin API client
+            preload_limit: Maximum number of library items to preload
         """
         self.jellyfin = jellyfin
+        self.preload_limit = preload_limit
         self._cache: dict[int, Optional[LibraryItem]] = {}  # tmdb_id -> LibraryItem
         self._library_loaded: dict[str, bool] = {}  # library_id -> loaded
         self._library_items: dict[str, dict[int, LibraryItem]] = {}  # library_id -> {tmdb_id -> item}
@@ -33,7 +35,7 @@ class MediaMatcher:
         items = await self.jellyfin.get_library_items(
             library_id=library_id,
             media_type=media_type,
-            limit=10000,
+            limit=self.preload_limit,
         )
 
         # Index by TMDb ID

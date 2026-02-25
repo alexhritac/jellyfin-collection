@@ -376,6 +376,7 @@ class Settings(BaseSettings):
 
     # Application settings
     log_level: str = Field(default="INFO")
+    matcher_preload_limit: int = Field(default=50000)
     config_path: Path = Field(default=Path("/config"))
     data_path: Path = Field(default=Path("/data"))
     log_path: Path = Field(default=Path("/logs"))
@@ -702,6 +703,7 @@ def log_settings(settings: "Settings") -> None:
     # Application
     logger.info("[Application]")
     logger.info(f"  Log Level: {settings.log_level}")
+    logger.info(f"  Matcher Preload Limit: {settings.matcher_preload_limit}")
     logger.info(f"  Dry Run:   {settings.dry_run}")
 
     logger.info("=" * 60)
