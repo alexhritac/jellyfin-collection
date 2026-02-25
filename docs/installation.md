@@ -108,6 +108,7 @@ settings:
   scheduler:
     collections_cron: "0 17 * * *"
     run_on_start: true
+    run_all_on_start: false
     timezone: Europe/Paris
 
 libraries:
@@ -150,10 +151,11 @@ docker-compose logs -f
    - Compose path: `docker-compose.portainer.yml`
 
 3. Add **Environment variables** in the Portainer UI:
-   - `JELLYFIN_URL`
    - `JELLYFIN_API_KEY`
    - `TMDB_API_KEY`
-   - (other optional variables)
+   - `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` (optional)
+   - `RADARR_API_KEY` / `SONARR_API_KEY` (optional)
+   - `OPENAI_API_KEY` (optional)
 
 4. Click **Deploy the stack**
 
@@ -167,7 +169,6 @@ mkdir -p config data logs
 docker run -d \
   --name jellyfin-collection \
   --restart unless-stopped \
-  -e JELLYFIN_URL=http://your-jellyfin:8096 \
   -e JELLYFIN_API_KEY=your_api_key \
   -e TMDB_API_KEY=your_tmdb_key \
   -v $(pwd)/config:/config:ro \

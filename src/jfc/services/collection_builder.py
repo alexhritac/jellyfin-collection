@@ -1,6 +1,7 @@
 """Service for building collections from Kometa configurations."""
 
 import random
+import re
 import time
 from datetime import date
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
+from jfc.clients.imdb import IMDbClient
 from jfc.clients.jellyfin import JellyfinClient
 from jfc.clients.radarr import RadarrClient
 from jfc.clients.sonarr import SonarrClient
@@ -20,6 +22,7 @@ from jfc.models.collection import (
     CollectionFilter,
     CollectionItem,
     CollectionOrder,
+    SyncMode,
 )
 from jfc.models.media import MediaItem, MediaType, Movie, Series
 from jfc.models.report import CollectionReport
@@ -35,6 +38,7 @@ class CollectionBuilder:
         jellyfin: JellyfinClient,
         tmdb: TMDbClient,
         trakt: Optional[TraktClient] = None,
+        imdb: Optional[IMDbClient] = None,
         radarr: Optional[RadarrClient] = None,
         sonarr: Optional[SonarrClient] = None,
         poster_generator: Optional[PosterGenerator] = None,
@@ -47,6 +51,7 @@ class CollectionBuilder:
             jellyfin: Jellyfin API client
             tmdb: TMDb API client
             trakt: Optional Trakt API client
+            imdb: Optional IMDb client
             radarr: Optional Radarr client for adding missing movies
             sonarr: Optional Sonarr client for adding missing series
             poster_generator: Optional AI poster generator
@@ -55,12 +60,14 @@ class CollectionBuilder:
         self.jellyfin = jellyfin
         self.tmdb = tmdb
         self.trakt = trakt
+        self.imdb = imdb
         self.radarr = radarr
         self.sonarr = sonarr
         self.poster_generator = poster_generator
         self.dry_run = dry_run
 
-        self.matcher = MediaMatcher(jellyfin)
+        settings = get_settings()
+        self.matcher = MediaMatcher(jellyfin, preload_limit=settings.matcher_preload_limit)
 
     async def build_collection(
         self,
@@ -176,6 +183,8 @@ class CollectionBuilder:
             sources.append("TMDb Popular")
         if config.tmdb_discover:
             sources.append("TMDb Discover")
+        if config.tmdb_list:
+            sources.append("TMDb List")
         if config.trakt_trending:
             sources.append("Trakt Trending")
         if config.trakt_popular:
@@ -183,6 +192,14 @@ class CollectionBuilder:
         if config.trakt_chart:
             chart = config.trakt_chart.get("chart", "unknown")
             sources.append(f"Trakt {chart.capitalize()}")
+        if config.imdb_chart:
+            sources.append("IMDb Chart")
+        if config.imdb_list:
+            sources.append("IMDb List")
+        if config.radarr_taglist:
+            sources.append("Radarr Taglist")
+        if config.sonarr_taglist:
+            sources.append("Sonarr Taglist")
         if config.plex_search:
             sources.append("Library Search")
         return ", ".join(sources) if sources else "Unknown"
@@ -216,10 +233,19 @@ class CollectionBuilder:
 
         # Get or create Jellyfin collection
         jellyfin_collections = await self.jellyfin.get_collections()
-        existing = next(
-            (c for c in jellyfin_collections if c["Name"] == collection.config.name),
-            None,
-        )
+        existing_matches = [
+            c for c in jellyfin_collections if c.get("Name") == collection.config.name
+        ]
+        existing = None
+        if existing_matches:
+            existing = max(existing_matches, key=lambda c: c.get("ChildCount", 0))
+            if len(existing_matches) > 1:
+                ids = ", ".join(c.get("Id", "unknown") for c in existing_matches)
+                logger.warning(
+                    f"Found {len(existing_matches)} collections named "
+                    f"'{collection.config.name}'. Using ID {existing.get('Id')} "
+                    f"(largest ChildCount). IDs: {ids}"
+                )
 
         report.collection_existed = existing is not None
 
@@ -232,6 +258,8 @@ class CollectionBuilder:
 
         to_add: set[str] = set()
         to_remove: set[str] = set()
+        to_add_list: list[str] = []
+        to_remove_list: list[str] = []
 
         # Skip item sync if posters_only mode
         if not posters_only:
@@ -250,9 +278,16 @@ class CollectionBuilder:
             ]
             target_ids = set(target_ids_list)
 
-            # Calculate changes
-            to_add = target_ids - current_ids
-            to_remove = current_ids - target_ids
+            # Calculate changes based on sync mode
+            # Preserve source order for additions (important for ranked lists like IMDb Top 250)
+            to_add_list = [item_id for item_id in target_ids_list if item_id not in current_ids]
+            to_add = set(to_add_list)
+            if collection.config.sync_mode == SyncMode.SYNC:
+                to_remove = current_ids - target_ids
+                to_remove_list = list(to_remove)
+            else:
+                to_remove = set()
+                to_remove_list = []
 
             # Track added/removed titles for report
             added_jellyfin_ids = to_add
@@ -263,36 +298,63 @@ class CollectionBuilder:
             # Determine if we need to reorder (clear and re-add all)
             # Jellyfin displays items in the order they were added
             needs_reorder = (
-                collection.config.collection_order != CollectionOrder.CUSTOM
+                (
+                    collection.config.collection_order != CollectionOrder.CUSTOM
+                    or (
+                        collection.config.collection_order == CollectionOrder.CUSTOM
+                        and collection.config.sync_mode == SyncMode.SYNC
+                        and existing is not None
+                    )
+                )
                 and (to_add or to_remove or not existing)
             )
 
             if needs_reorder and target_ids_list:
                 # Clear all items and re-add in sorted order
                 if current_ids:
-                    await self.jellyfin.remove_from_collection(
+                    removed_ok = await self.jellyfin.remove_from_collection(
                         collection.jellyfin_id, list(current_ids)
                     )
-                await self.jellyfin.add_to_collection(
+                    if not removed_ok:
+                        raise RuntimeError(
+                            f"Failed to clear collection '{collection.config.name}' before reorder"
+                        )
+                added_ok = await self.jellyfin.add_to_collection(
                     collection.jellyfin_id, target_ids_list
                 )
+                if not added_ok:
+                    raise RuntimeError(
+                        f"Failed to re-add items while reordering '{collection.config.name}'"
+                    )
                 logger.info(
                     f"Reordered '{collection.config.name}' ({len(target_ids_list)} items, "
                     f"order={collection.config.collection_order.value})"
                 )
             else:
                 # Simple add/remove (no reordering needed)
-                if to_add:
-                    await self.jellyfin.add_to_collection(collection.jellyfin_id, list(to_add))
-                    logger.info(f"Added {len(to_add)} items to '{collection.config.name}'")
+                if to_add_list:
+                    added_ok = await self.jellyfin.add_to_collection(
+                        collection.jellyfin_id, to_add_list
+                    )
+                    if not added_ok:
+                        raise RuntimeError(
+                            f"Failed to add items to collection '{collection.config.name}'"
+                        )
+                    logger.info(f"Added {len(to_add_list)} items to '{collection.config.name}'")
 
-                if to_remove:
-                    await self.jellyfin.remove_from_collection(collection.jellyfin_id, list(to_remove))
-                    logger.info(f"Removed {len(to_remove)} items from '{collection.config.name}'")
+                if to_remove_list:
+                    removed_ok = await self.jellyfin.remove_from_collection(
+                        collection.jellyfin_id, to_remove_list
+                    )
+                    if not removed_ok:
+                        raise RuntimeError(
+                            f"Failed to remove items from collection '{collection.config.name}'"
+                        )
+                    logger.info(f"Removed {len(to_remove_list)} items from '{collection.config.name}'")
 
             # Update report
-            report.items_added_to_collection = len(to_add)
-            report.items_removed_from_collection = len(to_remove)
+            report.items_added_to_collection = len(to_add_list)
+            report.items_removed_from_collection = len(to_remove_list)
 
             # Update metadata (including DisplayOrder for Jellyfin sorting)
             display_order = self._get_jellyfin_display_order(collection.config.collection_order)
@@ -312,7 +374,7 @@ class CollectionBuilder:
             report.items_sent_to_radarr = radarr_count
             report.items_sent_to_sonarr = sonarr_count
 
-        return (len(to_add), len(to_remove), poster_path)
+        return (len(to_add_list), len(to_remove_list), poster_path)
 
     async def _fetch_items(
         self,
@@ -357,6 +419,39 @@ class CollectionBuilder:
             )
             items.extend(discover_items)
 
+        # TMDb List
+        if config.tmdb_list:
+            list_ids = self._normalize_tmdb_list_ids(config.tmdb_list)
+            for list_id in list_ids:
+                items.extend(
+                    await self.tmdb.get_list(
+                        list_id=list_id,
+                        media_type=media_type,
+                    )
+                )
+
+        # IMDb
+        if self.imdb:
+            if config.imdb_chart:
+                items.extend(await self._fetch_imdb_chart(config.imdb_chart, media_type))
+            if config.imdb_list:
+                items.extend(await self._fetch_imdb_list(config.imdb_list, media_type))
+        elif config.imdb_chart or config.imdb_list:
+            logger.warning("IMDb builders configured but IMDb client is not available")
+
+        # Arr tag lists
+        if config.radarr_taglist:
+            if self.radarr and media_type == MediaType.MOVIE:
+                items.extend(await self._fetch_radarr_taglist(config.radarr_taglist))
+            elif not self.radarr:
+                logger.warning("radarr_taglist configured but Radarr client is not available")
+
+        if config.sonarr_taglist:
+            if self.sonarr and media_type == MediaType.SERIES:
+                items.extend(await self._fetch_sonarr_taglist(config.sonarr_taglist))
+            elif not self.sonarr:
+                logger.warning("sonarr_taglist configured but Sonarr client is not available")
+
         # Trakt
         if self.trakt:
             if config.trakt_trending:
@@ -383,14 +478,30 @@ class CollectionBuilder:
                 chart_items = await self._fetch_trakt_chart(config.trakt_chart, media_type)
                 items.extend(chart_items)
 
-        # Deduplicate by TMDb ID
-        seen_ids: set[int] = set()
+        # Deduplicate by external IDs while preserving order
+        seen_keys: set[tuple[str, str]] = set()
         unique_items: list[MediaItem] = []
 
         for item in items:
-            if item.tmdb_id and item.tmdb_id not in seen_ids:
-                seen_ids.add(item.tmdb_id)
-                unique_items.append(item)
+            dedupe_key: Optional[tuple[str, str]] = None
+            if item.tmdb_id:
+                dedupe_key = ("tmdb", str(item.tmdb_id))
+            elif item.imdb_id:
+                dedupe_key = ("imdb", item.imdb_id)
+            elif item.tvdb_id:
+                dedupe_key = ("tvdb", str(item.tvdb_id))
+            elif item.title:
+                year = item.year if item.year else 0
+                dedupe_key = ("title", f"{item.title.lower()}::{year}")
+
+            if not dedupe_key:
+                continue
+
+            if dedupe_key in seen_keys:
+                continue
+
+            seen_keys.add(dedupe_key)
+            unique_items.append(item)
 
         return unique_items
 
@@ -480,6 +591,201 @@ class CollectionBuilder:
                 with_origin_country=discover.get("with_origin_country"),
                 limit=adjusted_limit,
             )
+
+    def _normalize_tmdb_list_ids(
+        self,
+        tmdb_list: str | int | list[str | int],
+    ) -> list[int]:
+        """Normalize tmdb_list config value to a list of TMDb list IDs."""
+        values = tmdb_list if isinstance(tmdb_list, list) else [tmdb_list]
+        normalized_ids: list[int] = []
+
+        for value in values:
+            list_id = self._extract_tmdb_list_id(value)
+            if list_id is not None:
+                normalized_ids.append(list_id)
+
+        return normalized_ids
+
+    def _extract_tmdb_list_id(self, value: str | int) -> Optional[int]:
+        """Extract numeric TMDb list ID from int, string, or list URL."""
+        if isinstance(value, int):
+            return value
+
+        raw_value = str(value).strip()
+        if raw_value.isdigit():
+            return int(raw_value)
+
+        # Accept full URL format like: https://www.themoviedb.org/list/710
+        match = re.search(r"/list/(\d+)", raw_value)
+        if match:
+            return int(match.group(1))
+
+        logger.warning(f"Invalid tmdb_list value '{value}' expected ID or TMDb list URL")
+        return None
+
+    async def _fetch_imdb_chart(
+        self,
+        imdb_chart: dict[str, Any],
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """Fetch items from IMDb charts and resolve to TMDb items."""
+        if not self.imdb:
+            return []
+
+        chart_ids = self._normalize_imdb_ids(imdb_chart.get("list_ids"))
+        limit = imdb_chart.get("limit")
+        imdb_ids: list[str] = []
+
+        for chart_id in chart_ids:
+            chart_limit = int(limit) if limit else 250
+            imdb_ids.extend(await self.imdb.get_chart(chart_id, limit=chart_limit))
+
+        return await self._resolve_imdb_ids(imdb_ids, media_type, limit=limit)
+
+    async def _fetch_imdb_list(
+        self,
+        imdb_list: dict[str, Any],
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """Fetch items from IMDb custom lists and resolve to TMDb items."""
+        if not self.imdb:
+            return []
+
+        list_ids = self._normalize_imdb_ids(imdb_list.get("list_ids"))
+        limit = imdb_list.get("limit")
+        imdb_ids: list[str] = []
+
+        for list_id in list_ids:
+            list_limit = int(limit) if limit else 250
+            imdb_ids.extend(await self.imdb.get_list(list_id, limit=list_limit))
+
+        return await self._resolve_imdb_ids(imdb_ids, media_type, limit=limit)
+
+    async def _fetch_radarr_taglist(self, config: dict[str, Any]) -> list[MediaItem]:
+        """Fetch movies from Radarr filtered by tag names."""
+        if not self.radarr:
+            return []
+
+        tags = self._normalize_imdb_ids(config.get("tags"))
+        limit = config.get("limit")
+        max_items = int(limit) if limit else None
+
+        movies = await self.radarr.get_movies()
+        tag_map = {
+            tag.get("id"): str(tag.get("label", "")).strip().lower()
+            for tag in await self.radarr.get_tags()
+        }
+        tag_set = {tag.lower() for tag in tags}
+
+        results: list[MediaItem] = []
+        for movie in movies:
+            movie_tag_ids = movie.get("tags", [])
+            movie_tag_names = {
+                tag_map[tag_id] for tag_id in movie_tag_ids if tag_id in tag_map and tag_map[tag_id]
+            }
+            if not movie_tag_names.intersection(tag_set):
+                continue
+
+            results.append(
+                Movie(
+                    title=movie.get("title", "Unknown"),
+                    year=movie.get("year"),
+                    tmdb_id=movie.get("tmdbId"),
+                    imdb_id=movie.get("imdbId"),
+                    overview=movie.get("overview"),
+                    genres=movie.get("genres", []),
+                )
+            )
+
+            if max_items and len(results) >= max_items:
+                break
+
+        logger.info(f"[Radarr] Taglist ({', '.join(tags)}): fetched {len(results)} items")
+        return results
+
+    async def _fetch_sonarr_taglist(self, config: dict[str, Any]) -> list[MediaItem]:
+        """Fetch series from Sonarr filtered by tag names."""
+        if not self.sonarr:
+            return []
+
+        tags = self._normalize_imdb_ids(config.get("tags"))
+        limit = config.get("limit")
+        max_items = int(limit) if limit else None
+
+        series_list = await self.sonarr.get_series()
+        tag_map = {
+            tag.get("id"): str(tag.get("label", "")).strip().lower()
+            for tag in await self.sonarr.get_tags()
+        }
+        tag_set = {tag.lower() for tag in tags}
+
+        results: list[MediaItem] = []
+        for series in series_list:
+            series_tag_ids = series.get("tags", [])
+            series_tag_names = {
+                tag_map[tag_id] for tag_id in series_tag_ids if tag_id in tag_map and tag_map[tag_id]
+            }
+            if not series_tag_names.intersection(tag_set):
+                continue
+
+            results.append(
+                Series(
+                    title=series.get("title", "Unknown"),
+                    year=series.get("year"),
+                    tmdb_id=series.get("tmdbId"),
+                    tvdb_id=series.get("tvdbId"),
+                    imdb_id=series.get("imdbId"),
+                    overview=series.get("overview"),
+                    genres=series.get("genres", []),
+                )
+            )
+
+            if max_items and len(results) >= max_items:
+                break
+
+        logger.info(f"[Sonarr] Taglist ({', '.join(tags)}): fetched {len(results)} items")
+        return results
+
+    def _normalize_imdb_ids(self, values: Any) -> list[str]:
+        """Normalize IMDb chart/list ID values into a clean list."""
+        if values is None:
+            return []
+
+        raw_values = values if isinstance(values, list) else [values]
+        normalized: list[str] = []
+
+        for value in raw_values:
+            value_str = str(value).strip()
+            if value_str:
+                normalized.append(value_str)
+
+        return normalized
+
+    async def _resolve_imdb_ids(
+        self,
+        imdb_ids: list[str],
+        media_type: MediaType,
+        limit: Optional[int] = None,
+    ) -> list[MediaItem]:
+        """Resolve IMDb IDs to TMDb media items."""
+        resolved: list[MediaItem] = []
+        seen: set[str] = set()
+        max_items = int(limit) if limit else None
+
+        for imdb_id in imdb_ids:
+            if imdb_id in seen:
+                continue
+            seen.add(imdb_id)
+
+            item = await self.tmdb.find_by_imdb_id(imdb_id, media_type=media_type)
+            if item:
+                resolved.append(item)
+
+            if max_items and len(resolved) >= max_items:
+                break
+
+        return resolved
 
     async def _fetch_trakt_chart(
         self,
@@ -675,7 +981,9 @@ class CollectionBuilder:
         order_mapping = {
             CollectionOrder.CUSTOM: "Default",
             CollectionOrder.SORT_NAME: "SortName",
-            CollectionOrder.PREMIERE_DATE: "PremiereDate",
+            # Keep app-level newest-first insertion order for release date.
+            # Jellyfin's PremiereDate display order is often oldest-first.
+            CollectionOrder.PREMIERE_DATE: "Default",
             CollectionOrder.DATE_CREATED: "DateCreated",
             CollectionOrder.COMMUNITY_RATING: "CommunityRating",
             CollectionOrder.CRITIC_RATING: "CommunityRating",  # Jellyfin uses same field

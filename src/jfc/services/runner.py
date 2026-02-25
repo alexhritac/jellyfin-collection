@@ -11,6 +11,7 @@ from loguru import logger
 from rich.console import Console
 
 from jfc.clients.discord import DiscordWebhook
+from jfc.clients.imdb import IMDbClient
 from jfc.clients.jellyfin import JellyfinClient
 from jfc.clients.radarr import RadarrClient
 from jfc.clients.sonarr import SonarrClient
@@ -56,6 +57,8 @@ class Runner:
             language=settings.tmdb.language,
             region=settings.tmdb.region,
         )
+
+        self.imdb = IMDbClient()
 
         self.trakt: Optional[TraktClient] = None
         self.trakt_auth: Optional[TraktAuth] = None
@@ -137,6 +140,7 @@ class Runner:
             jellyfin=self.jellyfin,
             tmdb=self.tmdb,
             trakt=self.trakt,
+            imdb=self.imdb,
             radarr=self.radarr,
             sonarr=self.sonarr,
             poster_generator=self.poster_generator,
@@ -497,6 +501,7 @@ class Runner:
         """Close all client connections."""
         await self.jellyfin.close()
         await self.tmdb.close()
+        await self.imdb.close()
         if self.trakt:
             await self.trakt.close()
         if self.radarr:

@@ -80,6 +80,76 @@ class TestKometaParser:
         assert 28 in action.tmdb_discover["with_genres"]
         assert action.limit == 30
 
+    def test_parse_collection_with_tmdb_list(self, temp_config_dir: Path):
+        """Test parsing collection with tmdb_list."""
+        collection_file = temp_config_dir / "Films.yml"
+        collection_file.write_text(
+            """
+collections:
+  "TMDb Custom List":
+    tmdb_list:
+      - 710
+      - https://www.themoviedb.org/list/710
+""",
+            encoding="utf-8",
+        )
+
+        parser = KometaParser(temp_config_dir)
+        collections = parser.parse_collection_file(collection_file)
+
+        custom = next(c for c in collections if c.name == "TMDb Custom List")
+        assert custom.tmdb_list == [710, "https://www.themoviedb.org/list/710"]
+
+    def test_parse_collection_with_imdb_builders(self, temp_config_dir: Path):
+        """Test parsing imdb_chart and imdb_list builders."""
+        collection_file = temp_config_dir / "Films.yml"
+        collection_file.write_text(
+            """
+collections:
+  "IMDb Mix":
+    imdb_chart:
+      list_ids:
+        - tvmeter
+    imdb_list:
+      list_ids:
+        - ls055592025
+""",
+            encoding="utf-8",
+        )
+
+        parser = KometaParser(temp_config_dir)
+        collections = parser.parse_collection_file(collection_file)
+
+        imdb_mix = next(c for c in collections if c.name == "IMDb Mix")
+        assert imdb_mix.imdb_chart == {"list_ids": ["tvmeter"]}
+        assert imdb_mix.imdb_list == {"list_ids": ["ls055592025"]}
+
+    def test_parse_collection_with_arr_taglists(self, temp_config_dir: Path):
+        """Test parsing radarr_taglist and sonarr_taglist builders."""
+        collection_file = temp_config_dir / "Mixed.yml"
+        collection_file.write_text(
+            """
+collections:
+  "Arr Tags":
+    radarr_taglist:
+      tags:
+        - watchlist
+        - oscar
+      limit: 50
+    sonarr_taglist:
+      tags:
+        - backlog
+""",
+            encoding="utf-8",
+        )
+
+        parser = KometaParser(temp_config_dir)
+        collections = parser.parse_collection_file(collection_file)
+
+        arr_tags = next(c for c in collections if c.name == "Arr Tags")
+        assert arr_tags.radarr_taglist == {"tags": ["watchlist", "oscar"], "limit": 50}
+        assert arr_tags.sonarr_taglist == {"tags": ["backlog"]}
+
     def test_parse_collection_order(self, temp_config_dir: Path, sample_films_yml: Path):
         """Test parsing collection_order."""
         parser = KometaParser(temp_config_dir)

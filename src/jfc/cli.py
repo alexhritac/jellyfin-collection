@@ -279,9 +279,15 @@ def schedule(
 
         # Run immediately on startup if configured
         if run_on_start:
-            console.print("[cyan]Running initial collection sync...[/cyan]")
+            startup_all = settings.scheduler.run_all_on_start
+            mode_text = "all collections" if startup_all else "scheduled collections"
+            console.print(f"[cyan]Running initial collection sync ({mode_text})...[/cyan]")
             try:
-                await collections_sync()
+                await runner.run(
+                    scheduled=True,
+                    force_posters=settings.openai.force_regenerate,
+                    ignore_schedule=startup_all,
+                )
             except Exception as e:
                 console.print(f"[red]Initial sync failed:[/red] {e}")
 
@@ -349,6 +355,14 @@ def list_collections(
                 sources.append(f"Trakt Trending ({config.trakt_trending})")
             if config.trakt_chart:
                 sources.append(f"Trakt Chart ({config.trakt_chart.get('chart', 'unknown')})")
+            if config.imdb_chart:
+                sources.append("IMDb Chart")
+            if config.imdb_list:
+                sources.append("IMDb List")
+            if config.radarr_taglist:
+                sources.append("Radarr Taglist")
+            if config.sonarr_taglist:
+                sources.append("Sonarr Taglist")
             if config.plex_search:
                 sources.append("Library Search")
 

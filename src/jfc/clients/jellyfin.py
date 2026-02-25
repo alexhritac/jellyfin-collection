@@ -17,6 +17,8 @@ SUPPORTED_IMAGE_FORMATS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 class JellyfinClient(BaseClient):
     """Client for Jellyfin API."""
 
+    COLLECTION_ITEMS_BATCH_SIZE = 50
+
     def __init__(self, url: str, api_key: str):
         """
         Initialize Jellyfin client.
@@ -45,7 +47,7 @@ class JellyfinClient(BaseClient):
         self,
         library_id: str,
         media_type: Optional[MediaType] = None,
-        limit: int = 1000,
+        limit: int = 50000,
         start_index: int = 0,
     ) -> list[LibraryItem]:
         """
@@ -60,39 +62,62 @@ class JellyfinClient(BaseClient):
         Returns:
             List of library items
         """
-        params = {
+        base_params = {
             "ParentId": library_id,
-            "Limit": limit,
-            "StartIndex": start_index,
             "Recursive": True,
             "Fields": "ProviderIds,Path,Overview",
         }
 
         if media_type == MediaType.MOVIE:
-            params["IncludeItemTypes"] = "Movie"
+            base_params["IncludeItemTypes"] = "Movie"
         elif media_type == MediaType.SERIES:
-            params["IncludeItemTypes"] = "Series"
+            base_params["IncludeItemTypes"] = "Series"
 
-        response = await self.get("/Items", params=params)
-        response.raise_for_status()
+        # Jellyfin commonly caps page size (often 500), regardless of higher requested limits.
+        # Fetch in pages until exhausted (or until explicit limit is reached).
+        page_size = 500
+        offset = start_index
+        items: list[LibraryItem] = []
 
-        items = []
-        for item in response.json().get("Items", []):
-            provider_ids = item.get("ProviderIds", {})
-            items.append(
-                LibraryItem(
-                    jellyfin_id=item["Id"],
-                    title=item["Name"],
-                    year=item.get("ProductionYear"),
-                    media_type=self._map_item_type(item.get("Type", "")),
-                    tmdb_id=int(provider_ids["Tmdb"]) if provider_ids.get("Tmdb") else None,
-                    imdb_id=provider_ids.get("Imdb"),
-                    tvdb_id=int(provider_ids["Tvdb"]) if provider_ids.get("Tvdb") else None,
-                    library_id=library_id,
-                    library_name=item.get("ParentIndexNumber", "Unknown"),
-                    path=item.get("Path"),
+        while len(items) < limit:
+            remaining = limit - len(items)
+            if remaining <= 0:
+                break
+            current_page_size = min(page_size, remaining)
+
+            params = {
+                **base_params,
+                "Limit": current_page_size,
+                "StartIndex": offset,
+            }
+            response = await self.get("/Items", params=params)
+            response.raise_for_status()
+
+            page = response.json().get("Items", [])
+            if not page:
+                break
+
+            for item in page:
+                provider_ids = item.get("ProviderIds", {})
+                items.append(
+                    LibraryItem(
+                        jellyfin_id=item["Id"],
+                        title=item["Name"],
+                        year=item.get("ProductionYear"),
+                        media_type=self._map_item_type(item.get("Type", "")),
+                        tmdb_id=int(provider_ids["Tmdb"]) if provider_ids.get("Tmdb") else None,
+                        imdb_id=provider_ids.get("Imdb"),
+                        tvdb_id=int(provider_ids["Tvdb"]) if provider_ids.get("Tvdb") else None,
+                        library_id=library_id,
+                        library_name="",
+                        path=item.get("Path"),
+                    )
                 )
-            )
+
+            fetched = len(page)
+            offset += fetched
+            if fetched < current_page_size:
+                break
 
         return items
 
@@ -268,6 +293,7 @@ class JellyfinClient(BaseClient):
         params = {
             "ParentId": collection_id,
             "Fields": "ProviderIds",
+            "Recursive": True,
         }
 
         response = await self.get("/Items", params=params)
@@ -320,17 +346,25 @@ class JellyfinClient(BaseClient):
         if not item_ids:
             return True
 
-        response = await self.post(
-            f"/Collections/{collection_id}/Items",
-            params={"Ids": ",".join(item_ids)},
-        )
+        success = True
+        for i in range(0, len(item_ids), self.COLLECTION_ITEMS_BATCH_SIZE):
+            batch = item_ids[i : i + self.COLLECTION_ITEMS_BATCH_SIZE]
+            response = await self.post(
+                f"/Collections/{collection_id}/Items",
+                params={"Ids": ",".join(batch)},
+            )
 
-        if response.status_code == 204:
+            if response.status_code != 204:
+                logger.error(
+                    f"Failed to add items to collection: {response.status_code} "
+                    f"(batch {i // self.COLLECTION_ITEMS_BATCH_SIZE + 1})"
+                )
+                success = False
+                break
+
+        if success:
             logger.debug(f"Added {len(item_ids)} items to collection {collection_id}")
-            return True
-
-        logger.error(f"Failed to add items to collection: {response.status_code}")
-        return False
+        return success
 
     async def remove_from_collection(
         self,
@@ -350,17 +384,25 @@ class JellyfinClient(BaseClient):
         if not item_ids:
             return True
 
-        response = await self.delete(
-            f"/Collections/{collection_id}/Items",
-            params={"Ids": ",".join(item_ids)},
-        )
+        success = True
+        for i in range(0, len(item_ids), self.COLLECTION_ITEMS_BATCH_SIZE):
+            batch = item_ids[i : i + self.COLLECTION_ITEMS_BATCH_SIZE]
+            response = await self.delete(
+                f"/Collections/{collection_id}/Items",
+                params={"Ids": ",".join(batch)},
+            )
 
-        if response.status_code == 204:
+            if response.status_code != 204:
+                logger.error(
+                    f"Failed to remove items from collection: {response.status_code} "
+                    f"(batch {i // self.COLLECTION_ITEMS_BATCH_SIZE + 1})"
+                )
+                success = False
+                break
+
+        if success:
             logger.debug(f"Removed {len(item_ids)} items from collection {collection_id}")
-            return True
-
-        logger.error(f"Failed to remove items from collection: {response.status_code}")
-        return False
+        return success
 
     async def delete_collection(self, collection_id: str) -> bool:
         """

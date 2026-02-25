@@ -296,6 +296,8 @@ class SchedulerSettings(BaseModel):
     posters_cron: str = Field(default="0 4 1 * *")
     # Run collections sync immediately on startup
     run_on_start: bool = Field(default=True)
+    # On startup run, ignore per-collection schedules and process all collections
+    run_all_on_start: bool = Field(default=False)
     # Timezone for cron expressions
     timezone: str = Field(default="Europe/Paris")
     # Ignore individual collection schedules, process all collections on every run
@@ -368,11 +370,13 @@ class Settings(BaseSettings):
     scheduler_collections_cron: str = Field(default="0 3 * * *")
     scheduler_posters_cron: str = Field(default="0 4 1 * *")
     scheduler_run_on_start: bool = Field(default=True)
+    scheduler_run_all_on_start: bool = Field(default=False)
     scheduler_timezone: str = Field(default="Europe/Paris")
     scheduler_ignore_collection_schedule: bool = Field(default=False)
 
     # Application settings
     log_level: str = Field(default="INFO")
+    matcher_preload_limit: int = Field(default=50000)
     config_path: Path = Field(default=Path("/config"))
     data_path: Path = Field(default=Path("/data"))
     log_path: Path = Field(default=Path("/logs"))
@@ -604,6 +608,7 @@ class Settings(BaseSettings):
             collections_cron=self.scheduler_collections_cron,
             posters_cron=self.scheduler_posters_cron,
             run_on_start=self.scheduler_run_on_start,
+            run_all_on_start=self.scheduler_run_all_on_start,
             timezone=self.scheduler_timezone,
             ignore_collection_schedule=self.scheduler_ignore_collection_schedule,
         )
@@ -691,12 +696,14 @@ def log_settings(settings: "Settings") -> None:
     logger.info(f"  Collections Cron:    {settings.scheduler_collections_cron}")
     logger.info(f"  Posters Cron:        {settings.scheduler_posters_cron or '(disabled)'}")
     logger.info(f"  Run on Start:        {settings.scheduler_run_on_start}")
+    logger.info(f"  Run All on Start:    {settings.scheduler_run_all_on_start}")
     logger.info(f"  Timezone:            {settings.scheduler_timezone}")
     logger.info(f"  Ignore Col Schedule: {settings.scheduler_ignore_collection_schedule}")
 
     # Application
     logger.info("[Application]")
     logger.info(f"  Log Level: {settings.log_level}")
+    logger.info(f"  Matcher Preload Limit: {settings.matcher_preload_limit}")
     logger.info(f"  Dry Run:   {settings.dry_run}")
 
     logger.info("=" * 60)
