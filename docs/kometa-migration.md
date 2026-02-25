@@ -74,7 +74,7 @@ Most builders are supported. Here's the mapping:
 | `trakt_popular` | ✅ Supported | - |
 | `trakt_chart` | ✅ Supported | - |
 | `trakt_list` | ✅ Supported | - |
-| `plex_search` | 🚧 Planned | Parsed but not implemented as a fetch source |
+| `plex_search` | ✅ Supported | Jellyfin library search (`Genres`, `year`, `year.gte`, `year.lte`, `limit`) |
 | `mdblist_list` | 🚧 Planned | - |
 | `imdb_chart` | ✅ Supported | top, boxoffice, moviemeter, tvmeter |
 | `imdb_list` | ✅ Supported | `ls...` lists |
