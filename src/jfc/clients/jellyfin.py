@@ -111,6 +111,7 @@ class JellyfinClient(BaseClient):
                         library_id=library_id,
                         library_name="",
                         path=item.get("Path"),
+                        genres=item.get("Genres", []) or [],
                     )
                 )
 
@@ -168,6 +169,7 @@ class JellyfinClient(BaseClient):
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
+                    genres=item.get("Genres", []) or [],
                 )
             )
 
@@ -232,6 +234,7 @@ class JellyfinClient(BaseClient):
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
+                    genres=item.get("Genres", []) or [],
                 )
 
         logger.debug(f"[Jellyfin] TMDb lookup: {tmdb_id} -> not found in library")
