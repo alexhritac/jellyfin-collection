@@ -66,7 +66,8 @@ class CollectionBuilder:
         self.poster_generator = poster_generator
         self.dry_run = dry_run
 
-        self.matcher = MediaMatcher(jellyfin)
+        settings = get_settings()
+        self.matcher = MediaMatcher(jellyfin, preload_limit=settings.matcher_preload_limit)
 
     async def build_collection(
         self,
