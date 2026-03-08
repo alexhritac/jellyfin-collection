@@ -258,3 +258,66 @@ pytest --cov=jfc --cov-report=html
 - Current year: 2025
 - Author: 4lx69
 - License: MIT (2025-2026)
+
+## Regles Agent Factory
+
+**STOP!** Si tu vois un message "STOP!" suivi d'une commande `/agent-factory:task-resume`, EXECUTE-la immediatement.
+
+**Workflow obligatoire**: Ne modifie jamais de code sans workflow actif (task, task-quick, debug, remediate, browser-watch).
+
+Commandes: task, task-quick, task-resume, task-status, debug, audit, audit-resume, audit-status, audit-claude, review, remediate, idea, browser-watch, add-agent, add-command, create-cookbook, upgrade, smoke-test, export-debug, cleanup (prefixe: /agent-factory:)
+
+## Agent Factory
+
+<!-- agent-factory:start -->
+version: "1.0"
+
+# Stack du projet
+stack:
+  backend: python
+  frontend: null
+  database: null
+  ai:
+    - openai
+
+# Agents actifs pour ce projet
+agents:
+  # Core (toujours actifs)
+  core:
+    - orchestrator
+    - planner
+    - scrum
+    - qa-tester
+    - code-reviewer
+    - ux-designer
+
+  # Developers (selon stack)
+  developers:
+    - developer-python
+
+  # IA (si applicable)
+  ai:
+    - developer-ai-openai
+    - ai-architect
+
+  # Custom (surcharges dans .claude/agents/)
+  custom: []
+
+# Conventions du projet
+conventions:
+  language: fr
+  tests:
+    framework: pytest
+    coverage: 80
+  linter: ruff
+  formatter: black
+  commits: conventional
+
+# Chemins (architecture centree - chaque tache/bug = un dossier)
+paths:
+  tasks: .backlog/tasks
+  bugs: .backlog/bugs
+  cookbooks: .claude/cookbooks
+  ideas: .backlog/ideas
+  audit: .audit
+<!-- agent-factory:end -->

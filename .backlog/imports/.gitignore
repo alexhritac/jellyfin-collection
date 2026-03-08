@@ -1,0 +1,5 @@
+# Ignorer les fichiers importes (donnees sensibles potentielles)
+*.xlsx
+*.csv
+*.json
+!README.md
