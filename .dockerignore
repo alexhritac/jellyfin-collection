@@ -1,0 +1,45 @@
+# Version control
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+
+# Data and logs (mounted as volumes)
+logs/
+data/
+
+# Development
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# IDE
+.idea/
+.vscode/
+
+# Project management
+.backlog/
+.audit/
+.claude/
+
+# Docs (except README needed for pip install)
+docs/
+*.md
+!README.md
+
+# Docker
+docker-compose*.yml
