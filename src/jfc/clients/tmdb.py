@@ -1,7 +1,7 @@
 """TMDb (The Movie Database) API client."""
 
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from loguru import logger
 
@@ -54,6 +54,38 @@ class TMDbClient(BaseClient):
             year_str = f" ({item.year})" if item.year else ""
             logger.debug(f"  - [tmdb:{item.tmdb_id}] {item.title}{year_str}")
 
+    async def _fetch_paginated_results(
+        self,
+        endpoint: str,
+        limit: int,
+        parser: Callable[[dict[str, Any]], MediaItem],
+        params: Optional[dict[str, Any]] = None,
+    ) -> list[MediaItem]:
+        """Fetch paginated TMDb endpoint results up to limit."""
+        all_results: list[MediaItem] = []
+        page = 1
+        base_params = params.copy() if params else {}
+
+        while len(all_results) < limit:
+            request_params = self._params(page=page, **base_params)
+            response = await self.get(endpoint, params=request_params)
+            response.raise_for_status()
+
+            data = response.json()
+            results = data.get("results", [])
+            total_pages = data.get("total_pages", 1)
+
+            for item in results:
+                if len(all_results) >= limit:
+                    break
+                all_results.append(parser(item))
+
+            if page >= total_pages or not results:
+                break
+            page += 1
+
+        return all_results
+
     # =========================================================================
     # Trending
     # =========================================================================
@@ -73,18 +105,15 @@ class TMDbClient(BaseClient):
         Returns:
             List of trending movies
         """
-        params = self._params()
-        response = await self.get(
-            f"/trending/movie/{time_window}",
+        params: dict[str, Any] = {}
+        movies = await self._fetch_paginated_results(
+            endpoint=f"/trending/movie/{time_window}",
+            limit=limit,
+            parser=self._parse_movie,
             params=params,
         )
-        response.raise_for_status()
 
-        movies = []
-        for item in response.json().get("results", [])[:limit]:
-            movies.append(self._parse_movie(item))
-
-        self._log_items(f"Trending Movies ({time_window})", movies, params)
+        self._log_items(f"Trending Movies ({time_window})", movies, self._params(**params))
         return movies
 
     async def get_trending_series(
@@ -102,18 +131,15 @@ class TMDbClient(BaseClient):
         Returns:
             List of trending series
         """
-        params = self._params()
-        response = await self.get(
-            f"/trending/tv/{time_window}",
+        params: dict[str, Any] = {}
+        series = await self._fetch_paginated_results(
+            endpoint=f"/trending/tv/{time_window}",
+            limit=limit,
+            parser=self._parse_series,
             params=params,
         )
-        response.raise_for_status()
 
-        series = []
-        for item in response.json().get("results", [])[:limit]:
-            series.append(self._parse_series(item))
-
-        self._log_items(f"Trending Series ({time_window})", series, params)
+        self._log_items(f"Trending Series ({time_window})", series, self._params(**params))
         return series
 
     # =========================================================================
@@ -122,28 +148,28 @@ class TMDbClient(BaseClient):
 
     async def get_popular_movies(self, limit: int = 20) -> list[Movie]:
         """Get popular movies."""
-        params = self._params()
-        response = await self.get("/movie/popular", params=params)
-        response.raise_for_status()
+        params: dict[str, Any] = {}
+        movies = await self._fetch_paginated_results(
+            endpoint="/movie/popular",
+            limit=limit,
+            parser=self._parse_movie,
+            params=params,
+        )
 
-        movies = [
-            self._parse_movie(item)
-            for item in response.json().get("results", [])[:limit]
-        ]
-        self._log_items("Popular Movies", movies, params)
+        self._log_items("Popular Movies", movies, self._params(**params))
         return movies
 
     async def get_popular_series(self, limit: int = 20) -> list[Series]:
         """Get popular TV series."""
-        params = self._params()
-        response = await self.get("/tv/popular", params=params)
-        response.raise_for_status()
+        params: dict[str, Any] = {}
+        series = await self._fetch_paginated_results(
+            endpoint="/tv/popular",
+            limit=limit,
+            parser=self._parse_series,
+            params=params,
+        )
 
-        series = [
-            self._parse_series(item)
-            for item in response.json().get("results", [])[:limit]
-        ]
-        self._log_items("Popular Series", series, params)
+        self._log_items("Popular Series", series, self._params(**params))
         return series
 
     # =========================================================================
@@ -433,23 +459,21 @@ class TMDbClient(BaseClient):
 
     async def get_airing_today(self, limit: int = 20) -> list[Series]:
         """Get series airing today."""
-        response = await self.get("/tv/airing_today", params=self._params())
-        response.raise_for_status()
-
-        return [
-            self._parse_series(item)
-            for item in response.json().get("results", [])[:limit]
-        ]
+        return await self._fetch_paginated_results(
+            endpoint="/tv/airing_today",
+            limit=limit,
+            parser=self._parse_series,
+            params={},
+        )
 
     async def get_on_the_air(self, limit: int = 20) -> list[Series]:
         """Get series currently on the air (next 7 days)."""
-        response = await self.get("/tv/on_the_air", params=self._params())
-        response.raise_for_status()
-
-        return [
-            self._parse_series(item)
-            for item in response.json().get("results", [])[:limit]
-        ]
+        return await self._fetch_paginated_results(
+            endpoint="/tv/on_the_air",
+            limit=limit,
+            parser=self._parse_series,
+            params={},
+        )
 
     # =========================================================================
     # Details

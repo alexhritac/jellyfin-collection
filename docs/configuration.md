@@ -333,15 +333,24 @@ collections:
 
 ### Library Search
 
-`plex_search` is parsed but not implemented as a fetch source yet.
+`plex_search` is supported for Jellyfin library filtering.
 
 ```yaml
 collections:
-  "4K Movies":
+  "Recent Comedy Movies":
     plex_search:
       all:
-        resolution: 4K
+        Genres: Comedy
+        year.gte: 2012
+      limit: 50
 ```
+
+Supported `plex_search` keys:
+- `all.Genres` or `all.genre` (string or list)
+- `all.year`
+- `all.year.gte`
+- `all.year.lte`
+- top-level `limit`
 
 ## Filters
 

@@ -24,7 +24,7 @@ from jfc.models.collection import (
     CollectionOrder,
     SyncMode,
 )
-from jfc.models.media import MediaItem, MediaType, Movie, Series
+from jfc.models.media import LibraryItem, MediaItem, MediaType, Movie, Series
 from jfc.models.report import CollectionReport
 from jfc.services.media_matcher import MediaMatcher
 from jfc.services.poster_generator import PosterGenerator
@@ -100,7 +100,7 @@ class CollectionBuilder:
         )
 
         # Fetch items from providers
-        items = await self._fetch_items(config, media_type)
+        items = await self._fetch_items(config, library_id, media_type)
         report.items_fetched = len(items)
         report.fetched_titles = [item.title for item in items]
 
@@ -379,6 +379,7 @@ class CollectionBuilder:
     async def _fetch_items(
         self,
         config: CollectionConfig,
+        library_id: str,
         media_type: MediaType,
     ) -> list[MediaItem]:
         """Fetch items from configured providers."""
@@ -478,6 +479,16 @@ class CollectionBuilder:
                 chart_items = await self._fetch_trakt_chart(config.trakt_chart, media_type)
                 items.extend(chart_items)
 
+        # Library search
+        if config.plex_search:
+            items.extend(
+                await self._fetch_plex_search(
+                    plex_search=config.plex_search,
+                    library_id=library_id,
+                    media_type=media_type,
+                )
+            )
+
         # Deduplicate by external IDs while preserving order
         seen_keys: set[tuple[str, str]] = set()
         unique_items: list[MediaItem] = []
@@ -504,6 +515,115 @@ class CollectionBuilder:
             unique_items.append(item)
 
         return unique_items
+
+    async def _fetch_plex_search(
+        self,
+        plex_search: dict[str, Any],
+        library_id: str,
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """
+        Fetch items from Jellyfin library using Kometa-compatible `plex_search`.
+
+        Supports the common subset:
+        - `all.Genres` / `all.genre`
+        - `all.year`
+        - `all.year.gte`
+        - `all.year.lte`
+        - top-level `limit`
+        """
+        if not isinstance(plex_search, dict):
+            logger.warning("Invalid plex_search config: expected object")
+            return []
+
+        conditions = plex_search.get("all", {})
+        if not isinstance(conditions, dict):
+            logger.warning("Invalid plex_search config: expected 'all' object")
+            return []
+
+        try:
+            limit = max(1, int(plex_search.get("limit", 50)))
+        except (TypeError, ValueError):
+            limit = 50
+
+        genre_values = conditions.get("Genres", conditions.get("genre"))
+        required_genres: set[str] = set()
+        if isinstance(genre_values, str) and genre_values.strip():
+            required_genres = {genre_values.strip().lower()}
+        elif isinstance(genre_values, list):
+            required_genres = {
+                str(genre).strip().lower()
+                for genre in genre_values
+                if isinstance(genre, str) and str(genre).strip()
+            }
+
+        try:
+            year_eq = int(conditions["year"]) if "year" in conditions else None
+        except (TypeError, ValueError):
+            year_eq = None
+        try:
+            year_gte = int(conditions["year.gte"]) if "year.gte" in conditions else None
+        except (TypeError, ValueError):
+            year_gte = None
+        try:
+            year_lte = int(conditions["year.lte"]) if "year.lte" in conditions else None
+        except (TypeError, ValueError):
+            year_lte = None
+
+        # Load from Jellyfin through the existing client API, then filter locally.
+        library_items = await self.jellyfin.get_library_items(
+            library_id=library_id,
+            media_type=media_type,
+            limit=self.matcher.preload_limit,
+        )
+
+        items: list[MediaItem] = []
+        for lib_item in library_items:
+            if not self._matches_plex_search(
+                item=lib_item,
+                required_genres=required_genres,
+                year_eq=year_eq,
+                year_gte=year_gte,
+                year_lte=year_lte,
+            ):
+                continue
+
+            media_item = lib_item.to_media_item()
+            media_item.media_type = media_type
+            items.append(media_item)
+            if len(items) >= limit:
+                break
+
+        logger.info(f"[Jellyfin] Library Search: fetched {len(items)} items")
+        return items
+
+    def _matches_plex_search(
+        self,
+        item: LibraryItem,
+        required_genres: set[str],
+        year_eq: Optional[int],
+        year_gte: Optional[int],
+        year_lte: Optional[int],
+    ) -> bool:
+        """Apply supported plex_search filters to a Jellyfin item."""
+        item_year = item.year
+        if year_eq is not None and item_year != year_eq:
+            return False
+        if year_gte is not None and (item_year is None or item_year < year_gte):
+            return False
+        if year_lte is not None and (item_year is None or item_year > year_lte):
+            return False
+
+        if required_genres:
+            item_genres = {
+                genre.strip().lower()
+                for genre in item.genres
+                if genre and genre.strip()
+            }
+            if not required_genres.issubset(item_genres):
+                return False
+
+        return True
 
     async def _fetch_tmdb_discover(
         self,

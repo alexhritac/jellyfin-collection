@@ -121,6 +121,7 @@ class LibraryItem(BaseModel):
     # File info
     path: Optional[str] = None
     file_name: Optional[str] = None
+    genres: list[str] = Field(default_factory=list)
 
     def to_media_item(self) -> MediaItem:
         """Convert to MediaItem."""
@@ -132,4 +133,5 @@ class LibraryItem(BaseModel):
             imdb_id=self.imdb_id,
             tvdb_id=self.tvdb_id,
             jellyfin_id=self.jellyfin_id,
+            genres=self.genres,
         )

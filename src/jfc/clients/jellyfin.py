@@ -65,7 +65,7 @@ class JellyfinClient(BaseClient):
         base_params = {
             "ParentId": library_id,
             "Recursive": True,
-            "Fields": "ProviderIds,Path,Overview",
+            "Fields": "ProviderIds,Path,Overview,Genres",
         }
 
         if media_type == MediaType.MOVIE:
@@ -111,6 +111,7 @@ class JellyfinClient(BaseClient):
                         library_id=library_id,
                         library_name="",
                         path=item.get("Path"),
+                        genres=item.get("Genres", []) or [],
                     )
                 )
 
@@ -168,6 +169,7 @@ class JellyfinClient(BaseClient):
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
+                    genres=item.get("Genres", []) or [],
                 )
             )
 
@@ -232,6 +234,7 @@ class JellyfinClient(BaseClient):
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
+                    genres=item.get("Genres", []) or [],
                 )
 
         logger.debug(f"[Jellyfin] TMDb lookup: {tmdb_id} -> not found in library")
