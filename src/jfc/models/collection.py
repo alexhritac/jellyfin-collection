@@ -88,8 +88,8 @@ class CollectionFilter(BaseModel):
     critic_rating_gte: Optional[float] = None
 
     # Genre filters
-    with_genres: list[int] = Field(default_factory=list)
-    without_genres: list[int] = Field(default_factory=list)
+    with_genres: list[int | str] = Field(default_factory=list)
+    without_genres: list[int | str] = Field(default_factory=list)
 
     # Country filters
     country_not: list[str] = Field(default_factory=list)

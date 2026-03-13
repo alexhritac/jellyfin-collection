@@ -250,24 +250,35 @@ class KometaParser:
 
         # Genre filters (for post-filtering, TMDb discover handles these separately)
         if "without_genres" in filters:
-            genres = filters["without_genres"]
-            if isinstance(genres, int):
-                result.without_genres = [genres]
-            elif isinstance(genres, str):
-                result.without_genres = [int(g) for g in genres.split(",")]
-            else:
-                result.without_genres = genres
+            result.without_genres = self._normalize_filter_genres(filters["without_genres"])
 
         if "with_genres" in filters:
-            genres = filters["with_genres"]
-            if isinstance(genres, int):
-                result.with_genres = [genres]
-            elif isinstance(genres, str):
-                result.with_genres = [int(g) for g in genres.split(",")]
-            else:
-                result.with_genres = genres
+            result.with_genres = self._normalize_filter_genres(filters["with_genres"])
 
         return result
+
+    def _normalize_filter_genres(self, value: Any) -> list[int | str]:
+        """Normalize filter genres, preserving names like 'documentary'."""
+        values = value if isinstance(value, list) else [value]
+        normalized: list[int | str] = []
+
+        for item in values:
+            if isinstance(item, int):
+                normalized.append(item)
+                continue
+
+            item_str = str(item).strip()
+            if not item_str:
+                continue
+
+            # Support comma-separated values while preserving non-numeric genre names.
+            parts = [part.strip() for part in item_str.split(",")] if "," in item_str else [item_str]
+            for part in parts:
+                if not part:
+                    continue
+                normalized.append(int(part) if part.isdigit() else part)
+
+        return normalized
 
     def _parse_collection_order(self, value: str | None) -> CollectionOrder:
         """Parse collection_order value to enum."""

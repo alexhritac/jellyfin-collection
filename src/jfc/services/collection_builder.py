@@ -479,6 +479,9 @@ class CollectionBuilder:
                 chart_items = await self._fetch_trakt_chart(config.trakt_chart, media_type)
                 items.extend(chart_items)
 
+            if config.trakt_list:
+                items.extend(await self._fetch_trakt_list(config.trakt_list, media_type))
+
         # Library search
         if config.plex_search:
             items.extend(
@@ -940,6 +943,67 @@ class CollectionBuilder:
 
         return []
 
+    async def _fetch_trakt_list(
+        self,
+        trakt_list: str,
+        media_type: MediaType,
+    ) -> list[MediaItem]:
+        """Fetch items from a Trakt user list."""
+        if not self.trakt:
+            return []
+
+        parsed = self._parse_trakt_list_ref(trakt_list)
+        if not parsed:
+            logger.warning(
+                f"Invalid trakt_list value '{trakt_list}' expected user/list or Trakt list URL"
+            )
+            return []
+
+        user, list_id = parsed
+        items = await self.trakt.get_list(user=user, list_id=list_id, media_type=media_type)
+        logger.info(f"[Trakt] List {user}/{list_id}: fetched {len(items)} items")
+        return items
+
+    def _parse_trakt_list_ref(self, value: str) -> Optional[tuple[str, str]]:
+        """Parse a Trakt list reference from user/list or full URL."""
+        value = value.strip()
+        if not value:
+            return None
+
+        match = re.search(r"trakt\.tv/users/([^/]+)/lists/([^/?#]+)", value, re.IGNORECASE)
+        if match:
+            return (match.group(1), match.group(2))
+
+        parts = [part.strip() for part in value.split("/") if part.strip()]
+        if len(parts) >= 2:
+            return (parts[-2], parts[-1])
+
+        return None
+
+    def _normalize_genre_tokens(self, genres: list[int | str]) -> set[int | str]:
+        """Normalize mixed genre IDs/names for provider-agnostic matching."""
+        tokens: set[int | str] = set()
+
+        for genre in genres:
+            if isinstance(genre, int):
+                tokens.add(genre)
+                continue
+
+            genre_str = str(genre).strip()
+            if not genre_str:
+                continue
+
+            if genre_str.isdigit():
+                tokens.add(int(genre_str))
+                continue
+
+            normalized = genre_str.lower().replace("-", " ").replace("_", " ")
+            normalized = " ".join(normalized.split())
+            if normalized:
+                tokens.add(normalized)
+
+        return tokens
+
     def _apply_filters(
         self,
         items: list[MediaItem],
@@ -981,29 +1045,24 @@ class CollectionBuilder:
                     logger.debug(f"Filtered out '{item.title}': origin_country={item.original_country}")
                     continue
 
-            # Language filter (e.g., exclude Japanese anime)
+            # Language filter (for example, excluding specific original languages)
             if filters.original_language_not and item.original_language:
                 if item.original_language in filters.original_language_not:
                     logger.debug(f"Filtered out '{item.title}': language={item.original_language}")
                     continue
 
-            # Genre filters (genres stored as list of IDs)
+            item_genres = self._normalize_genre_tokens(item.genres)
+
+            # Genre filters support both TMDb IDs and provider genre names.
             if filters.without_genres and item.genres:
-                # item.genres can be list of ints or list of strings
-                item_genre_ids = [
-                    g if isinstance(g, int) else int(g) if str(g).isdigit() else 0
-                    for g in item.genres
-                ]
-                if any(g in item_genre_ids for g in filters.without_genres):
+                excluded_genres = self._normalize_genre_tokens(filters.without_genres)
+                if item_genres.intersection(excluded_genres):
                     logger.debug(f"Filtered out '{item.title}': excluded genre")
                     continue
 
             if filters.with_genres and item.genres:
-                item_genre_ids = [
-                    g if isinstance(g, int) else int(g) if str(g).isdigit() else 0
-                    for g in item.genres
-                ]
-                if not any(g in item_genre_ids for g in filters.with_genres):
+                required_genres = self._normalize_genre_tokens(filters.with_genres)
+                if not item_genres.intersection(required_genres):
                     logger.debug(f"Filtered out '{item.title}': missing required genre")
                     continue
 

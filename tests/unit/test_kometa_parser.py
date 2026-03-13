@@ -346,6 +346,14 @@ class TestParseFilters:
         })
         assert filters.with_genres == [28, 12]
 
+    def test_genre_filters_preserve_names(self, temp_config_dir: Path):
+        """Test parsing genre-name filters without coercing them to ints."""
+        parser = KometaParser(temp_config_dir)
+        filters = parser._parse_filters({
+            "without_genres": ["crime", "documentary"],
+        })
+        assert filters.without_genres == ["crime", "documentary"]
+
     def test_base_filter_inheritance(self, temp_config_dir: Path):
         """Test that base filter values are inherited."""
         from jfc.models.collection import CollectionFilter
