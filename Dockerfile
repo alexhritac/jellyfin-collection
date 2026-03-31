@@ -29,22 +29,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy source and install package
 COPY pyproject.toml README.md ./
 COPY src/ ./src/
-RUN pip install --no-cache-dir .
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN pip install --no-cache-dir . && playwright install chromium --with-deps
 
 # -----------------------------------------------------------------------------
 # Production stage
 # -----------------------------------------------------------------------------
 FROM base AS production
 
-# Install gosu for proper privilege dropping
+# Install gosu + Chromium system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
+    libnss3 \
+    libnspr4 \
+    libdbus-1-3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/* \
     && gosu nobody true
 
 # Copy installed packages from dependencies stage
 COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=dependencies /usr/local/bin /usr/local/bin
+COPY --from=dependencies /ms-playwright /ms-playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Create directories (ownership will be set by entrypoint based on PUID/PGID)
 RUN mkdir -p /config /data /logs

@@ -4,14 +4,14 @@ import json
 import re
 from typing import Optional
 
-from curl_cffi.requests import AsyncSession
 from loguru import logger
+from playwright.async_api import Browser, Playwright, async_playwright
 
 
 class IMDbClient:
-    """Client for fetching IMDb chart/list title IDs."""
+    """Client for fetching IMDb chart/list title IDs via headless Chromium."""
 
-    BASE_URL = "https://m.imdb.com"
+    BASE_URL = "https://www.imdb.com"
 
     CHART_PATHS = {
         "top": "/chart/top/",
@@ -21,17 +21,37 @@ class IMDbClient:
     }
 
     def __init__(self):
-        self._session: Optional[AsyncSession] = None
+        self._playwright: Optional[Playwright] = None
+        self._browser: Optional[Browser] = None
 
-    async def _get_session(self) -> AsyncSession:
-        if self._session is None:
-            self._session = AsyncSession(impersonate="safari_ios")
-        return self._session
+    async def _get_browser(self) -> Browser:
+        if self._playwright is None:
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+            )
+        return self._browser
 
     async def close(self) -> None:
-        if self._session:
-            await self._session.close()
-            self._session = None
+        if self._browser:
+            await self._browser.close()
+            self._browser = None
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
+
+    async def _fetch_html(self, url: str) -> Optional[str]:
+        browser = await self._get_browser()
+        page = await browser.new_page()
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=30_000)
+            return await page.content()
+        except Exception as exc:
+            logger.warning(f"[IMDb] Failed to fetch {url}: {exc}")
+            return None
+        finally:
+            await page.close()
 
     async def get_chart(self, chart_id: str, limit: int = 250) -> list[str]:
         """Get IMDb title IDs from a chart endpoint."""
@@ -41,21 +61,11 @@ class IMDbClient:
             logger.warning(f"[IMDb] Unknown chart '{chart_id}'")
             return []
 
-        session = await self._get_session()
-        response = await session.get(self.BASE_URL + path)
-
-        if response.status_code == 404:
-            logger.warning(f"[IMDb] Chart not found: {chart_id}")
+        html = await self._fetch_html(self.BASE_URL + path)
+        if not html:
             return []
 
-        if response.status_code != 200:
-            logger.warning(
-                f"[IMDb] Chart {chart_key}: received HTTP {response.status_code} "
-                "(likely challenge response)"
-            )
-            return []
-
-        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
+        imdb_ids = self._extract_imdb_ids(html, limit=limit)
         logger.info(f"[IMDb] Chart {chart_key}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
@@ -66,21 +76,11 @@ class IMDbClient:
             logger.warning(f"[IMDb] Invalid list id '{list_id}'")
             return []
 
-        session = await self._get_session()
-        response = await session.get(f"{self.BASE_URL}/list/{normalized}/")
-
-        if response.status_code == 404:
-            logger.warning(f"[IMDb] List not found: {normalized}")
+        html = await self._fetch_html(f"{self.BASE_URL}/list/{normalized}/")
+        if not html:
             return []
 
-        if response.status_code != 200:
-            logger.warning(
-                f"[IMDb] List {normalized}: received HTTP {response.status_code} "
-                "(likely challenge response)"
-            )
-            return []
-
-        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
+        imdb_ids = self._extract_imdb_ids(html, limit=limit)
         logger.info(f"[IMDb] List {normalized}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
