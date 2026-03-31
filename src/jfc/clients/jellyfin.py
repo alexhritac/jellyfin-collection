@@ -2,6 +2,7 @@
 
 import base64
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,6 +13,21 @@ from jfc.models.media import LibraryItem, MediaType
 
 # Supported image formats for posters
 SUPPORTED_IMAGE_FORMATS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _safe_int(value: str | None) -> int | None:
+    """Safely convert a provider ID string to int.
+
+    Handles None, empty strings, pure integers, and slug-like values
+    (e.g. ``"73375-jack-ryan"`` -> ``73375``).
+    """
+    if not value:
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        match = re.match(r"(\d+)", str(value))
+        return int(match.group(1)) if match else None
 
 
 class JellyfinClient(BaseClient):
@@ -105,9 +121,9 @@ class JellyfinClient(BaseClient):
                         title=item["Name"],
                         year=item.get("ProductionYear"),
                         media_type=self._map_item_type(item.get("Type", "")),
-                        tmdb_id=int(provider_ids["Tmdb"]) if provider_ids.get("Tmdb") else None,
+                        tmdb_id=_safe_int(provider_ids.get("Tmdb")),
                         imdb_id=provider_ids.get("Imdb"),
-                        tvdb_id=int(provider_ids["Tvdb"]) if provider_ids.get("Tvdb") else None,
+                        tvdb_id=_safe_int(provider_ids.get("Tvdb")),
                         library_id=library_id,
                         library_name="",
                         path=item.get("Path"),
@@ -163,9 +179,9 @@ class JellyfinClient(BaseClient):
                     title=item["Name"],
                     year=item.get("ProductionYear"),
                     media_type=self._map_item_type(item.get("Type", "")),
-                    tmdb_id=int(provider_ids["Tmdb"]) if provider_ids.get("Tmdb") else None,
+                    tmdb_id=_safe_int(provider_ids.get("Tmdb")),
                     imdb_id=provider_ids.get("Imdb"),
-                    tvdb_id=int(provider_ids["Tvdb"]) if provider_ids.get("Tvdb") else None,
+                    tvdb_id=_safe_int(provider_ids.get("Tvdb")),
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
@@ -228,9 +244,9 @@ class JellyfinClient(BaseClient):
                     title=item["Name"],
                     year=item.get("ProductionYear"),
                     media_type=self._map_item_type(item.get("Type", "")),
-                    tmdb_id=int(item_tmdb_id),
+                    tmdb_id=_safe_int(item_tmdb_id),
                     imdb_id=provider_ids.get("Imdb"),
-                    tvdb_id=int(provider_ids["Tvdb"]) if provider_ids.get("Tvdb") else None,
+                    tvdb_id=_safe_int(provider_ids.get("Tvdb")),
                     library_id=item.get("ParentId", ""),
                     library_name="",
                     path=item.get("Path"),
