@@ -25,7 +25,7 @@ class IMDbClient:
 
     async def _get_session(self) -> AsyncSession:
         if self._session is None:
-            self._session = AsyncSession(impersonate="safari_ios_16_0")
+            self._session = AsyncSession(impersonate="safari_ios")
         return self._session
 
     async def close(self) -> None:
