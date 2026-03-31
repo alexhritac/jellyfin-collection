@@ -4,12 +4,11 @@ import json
 import re
 from typing import Optional
 
+from curl_cffi.requests import AsyncSession
 from loguru import logger
 
-from jfc.clients.base import BaseClient
 
-
-class IMDbClient(BaseClient):
+class IMDbClient:
     """Client for fetching IMDb chart/list title IDs."""
 
     BASE_URL = "https://www.imdb.com"
@@ -22,27 +21,17 @@ class IMDbClient(BaseClient):
     }
 
     def __init__(self):
-        super().__init__(base_url=self.BASE_URL)
+        self._session: Optional[AsyncSession] = None
 
-    @property
-    def headers(self) -> dict[str, str]:
-        return {
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) "
-                "Gecko/20100101 Firefox/145.0"
-            ),
-        }
+    async def _get_session(self) -> AsyncSession:
+        if self._session is None:
+            self._session = AsyncSession(impersonate="chrome")
+        return self._session
+
+    async def close(self) -> None:
+        if self._session:
+            await self._session.close()
+            self._session = None
 
     async def get_chart(self, chart_id: str, limit: int = 250) -> list[str]:
         """Get IMDb title IDs from a chart endpoint."""
@@ -52,18 +41,21 @@ class IMDbClient(BaseClient):
             logger.warning(f"Unknown IMDb chart '{chart_id}'")
             return []
 
-        response = await self.get(path)
+        session = await self._get_session()
+        response = await session.get(self.BASE_URL + path)
+
         if response.status_code == 404:
             logger.warning(f"IMDb chart not found: {chart_id}")
             return []
 
-        response.raise_for_status()
-        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
-        if response.status_code == 202 and not imdb_ids:
+        if response.status_code == 202 or response.status_code >= 400:
             logger.warning(
-                f"[IMDb] Chart {chart_key}: received HTTP 202 without title ids "
+                f"[IMDb] Chart {chart_key}: received HTTP {response.status_code} "
                 "(likely challenge response)"
             )
+            return []
+
+        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
         logger.info(f"[IMDb] Chart {chart_key}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
@@ -74,18 +66,21 @@ class IMDbClient(BaseClient):
             logger.warning(f"Invalid IMDb list id '{list_id}'")
             return []
 
-        response = await self.get(f"/list/{normalized}/")
+        session = await self._get_session()
+        response = await session.get(f"{self.BASE_URL}/list/{normalized}/")
+
         if response.status_code == 404:
             logger.warning(f"IMDb list not found: {normalized}")
             return []
 
-        response.raise_for_status()
-        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
-        if response.status_code == 202 and not imdb_ids:
+        if response.status_code == 202 or response.status_code >= 400:
             logger.warning(
-                f"[IMDb] List {normalized}: received HTTP 202 without title ids "
+                f"[IMDb] List {normalized}: received HTTP {response.status_code} "
                 "(likely challenge response)"
             )
+            return []
+
+        imdb_ids = self._extract_imdb_ids(response.text, limit=limit)
         logger.info(f"[IMDb] List {normalized}: fetched {len(imdb_ids)} ids")
         return imdb_ids
 
@@ -164,3 +159,9 @@ class IMDbClient(BaseClient):
 
         walk(payload)
         return ids
+
+    async def __aenter__(self) -> "IMDbClient":
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        await self.close()

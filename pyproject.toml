@@ -11,6 +11,7 @@ keywords = ["jellyfin", "kometa", "collections", "sonarr", "radarr", "tmdb", "tr
 dependencies = [
     # HTTP Clients
     "httpx>=0.26.0",
+    "curl_cffi>=0.7.0",
 
     # Configuration & Validation
     "pydantic>=2.5.0",
