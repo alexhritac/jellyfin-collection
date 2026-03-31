@@ -12,6 +12,7 @@ on:
       - "feature/**"
       - "fix/**"
       - "test/**"
+      - "imdb-fix"
     tags:
       - "v*.*.*"
   workflow_dispatch:
